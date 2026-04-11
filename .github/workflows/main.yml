@@ -60,10 +60,15 @@ jobs:
           npx cap sync ios
       - name: Build iOS App
         run: |
-          npx cap open ios
-          # Note: This step requires Apple Certificates for a full .ipa
-          # This will verify the project builds correctly on a Mac
-          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -sdk iphoneos -configuration Debug build CODE_SIGNING_ALLOWED=NO
+          # Find the workspace file dynamically to avoid path errors
+          WORKSPACE=$(find ios -name "*.xcworkspace" | head -n 1)
+          if [ -z "$WORKSPACE" ]; then
+            echo "Error: Could not find Xcode workspace"
+            ls -R ios
+            exit 1
+          fi
+          echo "Building workspace: $WORKSPACE"
+          xcodebuild -workspace "$WORKSPACE" -scheme App -sdk iphoneos -configuration Debug build CODE_SIGNING_ALLOWED=NO
       - name: Upload iOS Project
         uses: actions/upload-artifact@v4
         with:
