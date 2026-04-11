@@ -22,7 +22,11 @@ jobs:
       - name: Build web app
         run: npm run build
       - name: Sync Capacitor
-        run: npx cap sync android
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+          npx cap sync android
       - name: Build Android APK
         run: |
           cd android
@@ -49,7 +53,11 @@ jobs:
       - name: Build web app
         run: npm run build
       - name: Sync Capacitor
-        run: npx cap sync ios
+        run: |
+          if [ ! -d "ios" ]; then
+            npx cap add ios
+          fi
+          npx cap sync ios
       - name: Build iOS App
         run: |
           npx cap open ios
