@@ -55,8 +55,7 @@ workflows:
           # Build the IPA using the generated export options
           xcode-project build-ipa \
             --project ios/App/App.xcodeproj \
-            --scheme App \
-            --bundle-id com.smartplanner.kids
+            --scheme App
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
