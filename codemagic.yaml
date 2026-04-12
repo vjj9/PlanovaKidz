@@ -9,6 +9,8 @@ workflows:
       node: latest
       xcode: latest
       cocoapods: default
+    integrations:
+      app_store_connect: smartplanner
     scripts:
       - name: Install dependencies
         script: |
