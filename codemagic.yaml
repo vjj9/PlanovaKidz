@@ -58,16 +58,46 @@ workflows:
           echo "---------------------------------------"
           
           # Apply the provisioning profiles with verbose logging
-          xcode-project use-profiles --bundle-id com.smartplanner.kids --verbose
-          
-          # Find where the signing file was created and move it to the expected location
-          EXPORT_PLIST=$(find /Users/builder -name "export_options.plist" | head -n 1)
-          if [ -n "$EXPORT_PLIST" ]; then
-            echo "Found export_options.plist at $EXPORT_PLIST. Moving to /Users/builder/export_options.plist"
+          xcode-project use-profiles --bundle-id com.smartplanner.kids --verbose || true
+
+          # Find where use-profiles put the plist, or generate one manually as fallback
+          EXPORT_PLIST=$(find /Users/builder -name "export_options.plist" 2>/dev/null | head -n 1)
+          if [ -n "$EXPORT_PLIST" ] && [ "$EXPORT_PLIST" != "/Users/builder/export_options.plist" ]; then
+            echo "Found export_options.plist at $EXPORT_PLIST. Copying..."
             cp "$EXPORT_PLIST" /Users/builder/export_options.plist
-          else
-            echo "CRITICAL: export_options.plist was not generated. Check the logs above for 'use-profiles' errors."
+          elif [ -z "$EXPORT_PLIST" ]; then
+            echo "use-profiles did not generate export_options.plist — creating manually..."
+            PROFILE_UUID=$(find ~/Library/MobileDevice/Provisioning\ Profiles -name "*.mobileprovision" | head -n 1 | xargs -I{} sh -c 'security cms -D -i "{}" 2>/dev/null | grep -A1 "<key>UUID</key>" | tail -1 | sed "s/.*<string>\(.*\)<\/string>.*/\1/"')
+            echo "Using profile UUID: $PROFILE_UUID"
+            cat > /Users/builder/export_options.plist << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key>
+  <string>app-store</string>
+  <key>teamID</key>
+  <string>${APPLE_TEAM_ID}</string>
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>com.smartplanner.kids</key>
+    <string>${PROFILE_UUID}</string>
+  </dict>
+  <key>signingStyle</key>
+  <string>manual</string>
+  <key>stripSwiftSymbols</key>
+  <true/>
+  <key>uploadBitcode</key>
+  <false/>
+  <key>uploadSymbols</key>
+  <true/>
+</dict>
+</plist>
+EOF
           fi
+          echo "--- export_options.plist contents ---"
+          cat /Users/builder/export_options.plist
+          echo "-------------------------------------"
       - name: Build iOS IPA
         script: |
           # Build the IPA using the generated export options
