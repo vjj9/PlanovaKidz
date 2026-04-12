@@ -18,30 +18,41 @@ workflows:
           # Initialize the keychain
           keychain initialize
           
-          # Search for certificates (Restricted to project and build root to avoid system junk)
-          echo "Searching for your certificate..."
-          CERT_FILE=$(find . -name "*.p12" | head -n 1)
-          if [ -z "$CERT_FILE" ]; then
-            CERT_FILE=$(find /Users/builder -maxdepth 2 -name "*.p12" | head -n 1)
+          echo "--- Code Signing Diagnostics ---"
+          [ -n "$CM_CERTIFICATE" ] && echo "✅ CM_CERTIFICATE is available" || echo "❌ CM_CERTIFICATE is MISSING"
+          [ -n "$CM_PROVISIONING_PROFILE" ] && echo "✅ CM_PROVISIONING_PROFILE is available" || echo "❌ CM_PROVISIONING_PROFILE is MISSING"
+          echo "--------------------------------"
+
+          # 1. Handle Certificate (CM_CERTIFICATE)
+          if [ -n "$CM_CERTIFICATE" ]; then
+            if [ -f "$CM_CERTIFICATE" ]; then
+              echo "CM_CERTIFICATE detected as a file path. Using directly..."
+              keychain add-certificates --certificate "$CM_CERTIFICATE" --certificate-password "${CM_CERTIFICATE_PASSWORD:-}"
+            else
+              echo "CM_CERTIFICATE detected as base64. Decoding..."
+              # Use -D for macOS base64 decoding which is more standard on Codemagic
+              echo "$CM_CERTIFICATE" | base64 -D > /tmp/certificate.p12 2>/dev/null || echo "$CM_CERTIFICATE" | base64 --decode > /tmp/certificate.p12
+              keychain add-certificates --certificate /tmp/certificate.p12 --certificate-password "${CM_CERTIFICATE_PASSWORD:-}"
+            fi
           fi
 
-          if [ -n "$CERT_FILE" ]; then
-            echo "Found certificate at $CERT_FILE. Installing..."
-            # Correct flag is --certificate and --certificate-password
-            keychain add-certificates --certificate "$CERT_FILE" --certificate-password "${CM_CERTIFICATE_PASSWORD:-}"
-          else
-            echo "No .p12 certificate found in project or build root."
-            keychain add-certificates || true
-          fi
-          
-          # Search for provisioning profiles
-          echo "Searching for provisioning profiles..."
+          # 2. Handle Provisioning Profile (CM_PROVISIONING_PROFILE)
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          # Look in project and build root only
-          find . -name "*.mobileprovision" -exec cp {} ~/Library/MobileDevice/Provisioning\ Profiles/ \;
-          find /Users/builder -maxdepth 2 -name "*.mobileprovision" -exec cp {} ~/Library/MobileDevice/Provisioning\ Profiles/ \;
+          if [ -n "$CM_PROVISIONING_PROFILE" ]; then
+            if [ -f "$CM_PROVISIONING_PROFILE" ]; then
+              echo "CM_PROVISIONING_PROFILE detected as a file path. Copying..."
+              cp "$CM_PROVISIONING_PROFILE" ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
+            else
+              echo "CM_PROVISIONING_PROFILE detected as base64. Decoding..."
+              echo "$CM_PROVISIONING_PROFILE" | base64 -D > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision 2>/dev/null || echo "$CM_PROVISIONING_PROFILE" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
+            fi
+          fi
+
+          # 3. Search for any other profiles on disk as fallback
+          echo "Searching for any other .mobileprovision files..."
+          find /Users/builder -name "*.mobileprovision" -not -path "*/google-cloud-sdk/*" -exec cp {} ~/Library/MobileDevice/Provisioning\ Profiles/ \; 2>/dev/null
           
-          echo "Profiles found in Provisioning Profiles folder:"
+          echo "Final Profiles in folder:"
           ls ~/Library/MobileDevice/Provisioning\ Profiles/
       - name: Build web app
         script: |
@@ -80,32 +91,34 @@ workflows:
             echo "use-profiles did not generate export_options.plist — creating manually..."
             PROFILE_UUID=$(find ~/Library/MobileDevice/Provisioning\ Profiles -name "*.mobileprovision" | head -n 1 | xargs -I{} sh -c 'security cms -D -i "{}" 2>/dev/null | grep -A1 "<key>UUID</key>" | tail -1 | sed "s/.*<string>\(.*\)<\/string>.*/\1/"')
             echo "Using profile UUID: $PROFILE_UUID"
-            # Create the plist without leading spaces to avoid XML errors
+            # Create the plist with manual indentation to satisfy YAML, then strip it
             cat > /Users/builder/export_options.plist << 'EOF'
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0">
-            <dict>
-              <key>method</key>
-              <string>app-store</string>
-              <key>teamID</key>
-              <string>REPLACE_TEAM_ID</string>
-              <key>provisioningProfiles</key>
+              <?xml version="1.0" encoding="UTF-8"?>
+              <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+              <plist version="1.0">
               <dict>
-                <key>com.smartplanner.kids</key>
-                <string>REPLACE_UUID</string>
+                <key>method</key>
+                <string>app-store</string>
+                <key>teamID</key>
+                <string>REPLACE_TEAM_ID</string>
+                <key>provisioningProfiles</key>
+                <dict>
+                  <key>com.smartplanner.kids</key>
+                  <string>REPLACE_UUID</string>
+                </dict>
+                <key>signingStyle</key>
+                <string>manual</string>
+                <key>stripSwiftSymbols</key>
+                <true/>
+                <key>uploadBitcode</key>
+                <false/>
+                <key>uploadSymbols</key>
+                <true/>
               </dict>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>stripSwiftSymbols</key>
-              <true/>
-              <key>uploadBitcode</key>
-              <false/>
-              <key>uploadSymbols</key>
-              <true/>
-            </dict>
-            </plist>
+              </plist>
             EOF
+            # Strip the leading spaces we added for YAML's sake
+            sed -i '' 's/^[[:space:]]*//' /Users/builder/export_options.plist
             # Inject the variables into the plist
             sed -i '' "s/REPLACE_TEAM_ID/${APPLE_TEAM_ID}/" /Users/builder/export_options.plist
             sed -i '' "s/REPLACE_UUID/${PROFILE_UUID}/" /Users/builder/export_options.plist
