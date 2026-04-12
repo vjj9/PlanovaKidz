@@ -13,9 +13,18 @@ workflows:
           npm install
       - name: Set up code signing
         script: |
-          # Initialize the keychain and install certificates
+          # Initialize the keychain
           keychain initialize
-          keychain add-certificates
+          # Fetch and install certificates from Codemagic UI environment variables
+          # If the automatic search fails, we try to use the variables directly
+          if [ -n "$CM_CERTIFICATE" ]; then
+            echo "Installing certificate from environment variable..."
+            echo "$CM_CERTIFICATE" | base64 --decode > /tmp/certificate.p12
+            keychain add-certificates --p12 /tmp/certificate.p12 --p12-password "$CM_CERTIFICATE_PASSWORD"
+          else
+            echo "Searching for certificates in default locations..."
+            keychain add-certificates || echo "No certificates found in default locations."
+          fi
       - name: Build web app
         script: |
           npm run build
