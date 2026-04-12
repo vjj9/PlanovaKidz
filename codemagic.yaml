@@ -11,6 +11,12 @@ workflows:
       - name: Install dependencies
         script: |
           npm install
+      - name: Set up code signing
+        script: |
+          # Initialize the keychain and install certificates/profiles 
+          # uploaded to the Codemagic UI
+          keychain initialize
+          certificates install
       - name: Build web app
         script: |
           npm run build
