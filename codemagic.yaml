@@ -82,30 +82,30 @@ workflows:
             echo "Using profile UUID: $PROFILE_UUID"
             # Create the plist without leading spaces to avoid XML errors
             cat > /Users/builder/export_options.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>method</key>
-  <string>app-store</string>
-  <key>teamID</key>
-  <string>REPLACE_TEAM_ID</string>
-  <key>provisioningProfiles</key>
-  <dict>
-    <key>com.smartplanner.kids</key>
-    <string>REPLACE_UUID</string>
-  </dict>
-  <key>signingStyle</key>
-  <string>manual</string>
-  <key>stripSwiftSymbols</key>
-  <true/>
-  <key>uploadBitcode</key>
-  <false/>
-  <key>uploadSymbols</key>
-  <true/>
-</dict>
-</plist>
-EOF
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>teamID</key>
+              <string>REPLACE_TEAM_ID</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                <key>com.smartplanner.kids</key>
+                <string>REPLACE_UUID</string>
+              </dict>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>stripSwiftSymbols</key>
+              <true/>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <true/>
+            </dict>
+            </plist>
+            EOF
             # Inject the variables into the plist
             sed -i '' "s/REPLACE_TEAM_ID/${APPLE_TEAM_ID}/" /Users/builder/export_options.plist
             sed -i '' "s/REPLACE_UUID/${PROFILE_UUID}/" /Users/builder/export_options.plist
