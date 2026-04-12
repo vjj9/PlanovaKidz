@@ -16,7 +16,8 @@ workflows:
           # Initialize the keychain and install certificates/profiles 
           # uploaded to the Codemagic UI
           keychain initialize
-          certificates install
+          keychain add-certificates
+          xcode-project use-profiles
       - name: Build web app
         script: |
           npm run build
