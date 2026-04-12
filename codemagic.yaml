@@ -48,10 +48,6 @@ workflows:
             fi
           fi
 
-          # 3. Search for any other profiles on disk as fallback
-          echo "Searching for any other .mobileprovision files..."
-          find /Users/builder -name "*.mobileprovision" -not -path "*/google-cloud-sdk/*" -exec cp {} ~/Library/MobileDevice/Provisioning\ Profiles/ \; 2>/dev/null
-          
           echo "Final Profiles in folder:"
           ls ~/Library/MobileDevice/Provisioning\ Profiles/
       - name: Build web app
