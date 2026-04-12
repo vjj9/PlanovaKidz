@@ -35,17 +35,28 @@ workflows:
           rm -rf ios
           npx cap add ios
           npx cap sync ios
-          # NOW apply the provisioning profiles to the fresh project
-          xcode-project use-profiles
-          # Verify the project exists
-          ls -d ios/App/App.xcodeproj
+          
+          # Debug: Check the bundle ID in the project
+          echo "Current Bundle ID in project:"
+          grep "PRODUCT_BUNDLE_IDENTIFIER" ios/App/App.xcodeproj/project.pbxproj | head -n 1
+          
+          # NOW apply the provisioning profiles
+          # We use --bundle-id to force it to match our app
+          xcode-project use-profiles --bundle-id com.smartplanner.kids
+          
+          # Verify the export options were generated
+          if [ -f "/Users/builder/export_options.plist" ]; then
+            echo "Export options generated successfully."
+          else
+            echo "WARNING: export_options.plist not found. Signing might fail."
+          fi
       - name: Build iOS IPA
         script: |
-          # This command builds the archive and exports the IPA
-          # Capacitor 6+ uses the .xcodeproj with Swift Package Manager
+          # Build the IPA using the generated export options
           xcode-project build-ipa \
             --project ios/App/App.xcodeproj \
-            --scheme App
+            --scheme App \
+            --bundle-id com.smartplanner.kids
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
