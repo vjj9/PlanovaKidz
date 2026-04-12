@@ -2,7 +2,7 @@ workflows:
   ios-release:
     name: iOS Release Build
     instance_type: mac_mini_m1
-    max_build_duration: 60
+    max_build_duration: 120
     environment:
       groups:
         - apple_credentials
@@ -87,37 +87,8 @@ workflows:
             echo "use-profiles did not generate export_options.plist — creating manually..."
             PROFILE_UUID=$(find ~/Library/MobileDevice/Provisioning\ Profiles -name "*.mobileprovision" | head -n 1 | xargs -I{} sh -c 'security cms -D -i "{}" 2>/dev/null | grep -A1 "<key>UUID</key>" | tail -1 | sed "s/.*<string>\(.*\)<\/string>.*/\1/"')
             echo "Using profile UUID: $PROFILE_UUID"
-            # Create the plist
-            cat > /Users/builder/export_options.plist << 'EOF'
-            <?xml version="1.0" encoding="UTF-8"?>
-            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-            <plist version="1.0">
-            <dict>
-              <key>method</key>
-              <string>app-store</string>
-              <key>teamID</key>
-              <string>REPLACE_TEAM_ID</string>
-              <key>provisioningProfiles</key>
-              <dict>
-                <key>com.smartplanner.kids</key>
-                <string>REPLACE_UUID</string>
-              </dict>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>stripSwiftSymbols</key>
-              <true/>
-              <key>uploadBitcode</key>
-              <false/>
-              <key>uploadSymbols</key>
-              <true/>
-            </dict>
-            </plist>
-            EOF
-            # Strip the leading spaces we added for YAML's sake
-            sed -i '' 's/^[[:space:]]*//' /Users/builder/export_options.plist
-            # Inject the variables into the plist
-            sed -i '' "s/REPLACE_TEAM_ID/${APPLE_TEAM_ID}/" /Users/builder/export_options.plist
-            sed -i '' "s/REPLACE_UUID/${PROFILE_UUID}/" /Users/builder/export_options.plist
+            # Create the plist using printf to avoid heredoc indentation issues
+            printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n  <key>method</key>\n  <string>app-store</string>\n  <key>teamID</key>\n  <string>%s</string>\n  <key>provisioningProfiles</key>\n  <dict>\n    <key>com.smartplanner.kids</key>\n    <string>%s</string>\n  </dict>\n  <key>signingStyle</key>\n  <string>manual</string>\n  <key>stripSwiftSymbols</key>\n  <true/>\n  <key>uploadBitcode</key>\n  <false/>\n  <key>uploadSymbols</key>\n  <true/>\n</dict>\n</plist>\n' "$APPLE_TEAM_ID" "$PROFILE_UUID" > /Users/builder/export_options.plist
           fi
           echo "--- export_options.plist contents ---"
           cat /Users/builder/export_options.plist
@@ -127,7 +98,8 @@ workflows:
           # Build the IPA using the generated export options
           xcode-project build-ipa \
             --project ios/App/App.xcodeproj \
-            --scheme App
+            --scheme App \
+            --export-options-plist /Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
