@@ -16,14 +16,16 @@ workflows:
           npm run build
       - name: Sync Capacitor
         script: |
-          # Ensure the iOS platform is fully initialized
-          # If the workspace is missing (common when pushing from Windows), recreate it
-          if [ ! -d "ios/App/App.xcworkspace" ]; then
-            echo "iOS workspace not found. Re-initializing iOS platform..."
-            rm -rf ios
-            npx cap add ios
-          fi
+          # Always recreate the iOS platform from scratch on the build server
+          # This avoids issues with incomplete or broken folders pushed from Windows
+          echo "Re-initializing iOS platform for a clean build..."
+          rm -rf ios
+          npx cap add ios
           npx cap sync ios
+          # Explicitly install pods to ensure the workspace is generated
+          cd ios/App && pod install && cd ../..
+          # Verify the workspace exists
+          ls -d ios/App/App.xcworkspace
       - name: Build iOS IPA
         script: |
           # This command builds the archive and exports the IPA
