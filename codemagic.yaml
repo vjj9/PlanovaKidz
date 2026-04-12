@@ -15,17 +15,23 @@ workflows:
         script: |
           # Initialize the keychain
           keychain initialize
-          # Install certificate
-          if [ -n "$CM_CERTIFICATE" ]; then
-            echo "$CM_CERTIFICATE" | base64 --decode > /tmp/certificate.p12
-            keychain add-certificates --p12 /tmp/certificate.p12 --p12-password "$CM_CERTIFICATE_PASSWORD"
+          
+          # Search for certificates uploaded via UI
+          echo "Searching for certificates..."
+          CERT_FILE=$(find /Users/builder -name "*.p12" | head -n 1)
+          if [ -n "$CERT_FILE" ]; then
+            echo "Found certificate at $CERT_FILE. Installing..."
+            keychain add-certificates --p12 "$CERT_FILE" --p12-password "${CM_CERTIFICATE_PASSWORD:-}"
+          else
+            echo "No .p12 certificate found. Please upload one to the Codemagic UI."
+            keychain add-certificates || true
           fi
-          # Manually install provisioning profile if provided as env var
-          if [ -n "$CM_PROVISIONING_PROFILE" ]; then
-            echo "Installing profile from environment variable..."
-            mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-            echo "$CM_PROVISIONING_PROFILE" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
-          fi
+          
+          # Search for provisioning profiles uploaded via UI
+          echo "Searching for provisioning profiles..."
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          find /Users/builder -name "*.mobileprovision" -exec cp {} ~/Library/MobileDevice/Provisioning\ Profiles/ \;
+          ls ~/Library/MobileDevice/Provisioning\ Profiles/
       - name: Build web app
         script: |
           npm run build
