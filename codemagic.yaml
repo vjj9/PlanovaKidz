@@ -18,21 +18,30 @@ workflows:
           # Initialize the keychain
           keychain initialize
           
-          # Search for certificates uploaded via UI
-          echo "Searching for certificates..."
-          CERT_FILE=$(find /Users/builder -name "*.p12" | head -n 1)
+          # Search for certificates (Restricted to project and build root to avoid system junk)
+          echo "Searching for your certificate..."
+          CERT_FILE=$(find . -name "*.p12" | head -n 1)
+          if [ -z "$CERT_FILE" ]; then
+            CERT_FILE=$(find /Users/builder -maxdepth 2 -name "*.p12" | head -n 1)
+          fi
+
           if [ -n "$CERT_FILE" ]; then
             echo "Found certificate at $CERT_FILE. Installing..."
-            keychain add-certificates --p12 "$CERT_FILE" --p12-password "${CM_CERTIFICATE_PASSWORD:-}"
+            # Correct flag is --certificate and --certificate-password
+            keychain add-certificates --certificate "$CERT_FILE" --certificate-password "${CM_CERTIFICATE_PASSWORD:-}"
           else
-            echo "No .p12 certificate found. Please upload one to the Codemagic UI."
+            echo "No .p12 certificate found in project or build root."
             keychain add-certificates || true
           fi
           
-          # Search for provisioning profiles uploaded via UI
+          # Search for provisioning profiles
           echo "Searching for provisioning profiles..."
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          find /Users/builder -name "*.mobileprovision" -exec cp {} ~/Library/MobileDevice/Provisioning\ Profiles/ \;
+          # Look in project and build root only
+          find . -name "*.mobileprovision" -exec cp {} ~/Library/MobileDevice/Provisioning\ Profiles/ \;
+          find /Users/builder -maxdepth 2 -name "*.mobileprovision" -exec cp {} ~/Library/MobileDevice/Provisioning\ Profiles/ \;
+          
+          echo "Profiles found in Provisioning Profiles folder:"
           ls ~/Library/MobileDevice/Provisioning\ Profiles/
       - name: Build web app
         script: |
@@ -71,31 +80,35 @@ workflows:
             echo "use-profiles did not generate export_options.plist — creating manually..."
             PROFILE_UUID=$(find ~/Library/MobileDevice/Provisioning\ Profiles -name "*.mobileprovision" | head -n 1 | xargs -I{} sh -c 'security cms -D -i "{}" 2>/dev/null | grep -A1 "<key>UUID</key>" | tail -1 | sed "s/.*<string>\(.*\)<\/string>.*/\1/"')
             echo "Using profile UUID: $PROFILE_UUID"
-            cat > /Users/builder/export_options.plist << EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>method</key>
-            <string>app-store</string>
-            <key>teamID</key>
-            <string>${APPLE_TEAM_ID}</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>com.smartplanner.kids</key>
-              <string>${PROFILE_UUID}</string>
-            </dict>
-            <key>signingStyle</key>
-            <string>manual</string>
-            <key>stripSwiftSymbols</key>
-            <true/>
-            <key>uploadBitcode</key>
-            <false/>
-            <key>uploadSymbols</key>
-            <true/>
-          </dict>
-          </plist>
-          EOF
+            # Create the plist without leading spaces to avoid XML errors
+            cat > /Users/builder/export_options.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key>
+  <string>app-store</string>
+  <key>teamID</key>
+  <string>REPLACE_TEAM_ID</string>
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>com.smartplanner.kids</key>
+    <string>REPLACE_UUID</string>
+  </dict>
+  <key>signingStyle</key>
+  <string>manual</string>
+  <key>stripSwiftSymbols</key>
+  <true/>
+  <key>uploadBitcode</key>
+  <false/>
+  <key>uploadSymbols</key>
+  <true/>
+</dict>
+</plist>
+EOF
+            # Inject the variables into the plist
+            sed -i '' "s/REPLACE_TEAM_ID/${APPLE_TEAM_ID}/" /Users/builder/export_options.plist
+            sed -i '' "s/REPLACE_UUID/${PROFILE_UUID}/" /Users/builder/export_options.plist
           fi
           echo "--- export_options.plist contents ---"
           cat /Users/builder/export_options.plist
