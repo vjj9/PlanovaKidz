@@ -80,7 +80,7 @@ workflows:
           echo "---------------------------------------"
           
           # Apply the provisioning profiles with verbose logging
-          xcode-project use-profiles --bundle-id com.smartplanner.kids --verbose || true
+          xcode-project use-profiles --verbose || true
 
           # Find where use-profiles put the plist, or generate one manually as fallback
           EXPORT_PLIST=$(find /Users/builder -name "export_options.plist" 2>/dev/null | head -n 1)
@@ -91,31 +91,31 @@ workflows:
             echo "use-profiles did not generate export_options.plist — creating manually..."
             PROFILE_UUID=$(find ~/Library/MobileDevice/Provisioning\ Profiles -name "*.mobileprovision" | head -n 1 | xargs -I{} sh -c 'security cms -D -i "{}" 2>/dev/null | grep -A1 "<key>UUID</key>" | tail -1 | sed "s/.*<string>\(.*\)<\/string>.*/\1/"')
             echo "Using profile UUID: $PROFILE_UUID"
-            # Create the plist with manual indentation to satisfy YAML, then strip it
+            # Create the plist
             cat > /Users/builder/export_options.plist << 'EOF'
-              <?xml version="1.0" encoding="UTF-8"?>
-              <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-              <plist version="1.0">
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>teamID</key>
+              <string>REPLACE_TEAM_ID</string>
+              <key>provisioningProfiles</key>
               <dict>
-                <key>method</key>
-                <string>app-store</string>
-                <key>teamID</key>
-                <string>REPLACE_TEAM_ID</string>
-                <key>provisioningProfiles</key>
-                <dict>
-                  <key>com.smartplanner.kids</key>
-                  <string>REPLACE_UUID</string>
-                </dict>
-                <key>signingStyle</key>
-                <string>manual</string>
-                <key>stripSwiftSymbols</key>
-                <true/>
-                <key>uploadBitcode</key>
-                <false/>
-                <key>uploadSymbols</key>
-                <true/>
+                <key>com.smartplanner.kids</key>
+                <string>REPLACE_UUID</string>
               </dict>
-              </plist>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>stripSwiftSymbols</key>
+              <true/>
+              <key>uploadBitcode</key>
+              <false/>
+              <key>uploadSymbols</key>
+              <true/>
+            </dict>
+            </plist>
             EOF
             # Strip the leading spaces we added for YAML's sake
             sed -i '' 's/^[[:space:]]*//' /Users/builder/export_options.plist
