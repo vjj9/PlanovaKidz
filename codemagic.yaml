@@ -13,23 +13,22 @@ workflows:
           npm install
       - name: Set up code signing
         script: |
-          # Initialize the keychain and install certificates/profiles 
-          # uploaded to the Codemagic UI
+          # Initialize the keychain and install certificates
           keychain initialize
           keychain add-certificates
-          xcode-project use-profiles
       - name: Build web app
         script: |
           npm run build
       - name: Sync Capacitor
         script: |
           # Always recreate the iOS platform from scratch on the build server
-          # This avoids issues with incomplete or broken folders pushed from Windows
           echo "Re-initializing iOS platform for a clean build..."
           rm -rf ios
           npx cap add ios
           npx cap sync ios
-          # Verify the project exists (Capacitor 6+ uses SPM/xcodeproj by default)
+          # NOW apply the provisioning profiles to the fresh project
+          xcode-project use-profiles
+          # Verify the project exists
           ls -d ios/App/App.xcodeproj
       - name: Build iOS IPA
         script: |
