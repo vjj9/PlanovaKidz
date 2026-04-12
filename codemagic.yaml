@@ -22,17 +22,14 @@ workflows:
           rm -rf ios
           npx cap add ios
           npx cap sync ios
-          # Explicitly install pods to ensure the workspace is generated
-          cd ios/App && pod install && cd ../..
-          # Verify the workspace exists
-          ls -d ios/App/App.xcworkspace
+          # Verify the project exists (Capacitor 6+ uses SPM/xcodeproj by default)
+          ls -d ios/App/App.xcodeproj
       - name: Build iOS IPA
         script: |
           # This command builds the archive and exports the IPA
-          # Codemagic will automatically inject the code signing identities 
-          # if you upload them to the "Code Signing" section in the UI.
+          # Capacitor 6+ uses the .xcodeproj with Swift Package Manager
           xcode-project build-ipa \
-            --workspace ios/App/App.xcworkspace \
+            --project ios/App/App.xcodeproj \
             --scheme App
     artifacts:
       - build/ios/ipa/*.ipa
