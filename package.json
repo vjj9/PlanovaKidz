@@ -10,7 +10,8 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "mobile:ios": "npm run build && npx cap sync ios && npx cap open ios",
-    "mobile:android": "npm run build && npx cap sync android && npx cap open android"
+    "mobile:android": "npm run build && npx cap sync android && npx cap open android",
+    "resources": "npx capacitor-assets generate"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.0",
@@ -30,6 +31,7 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
