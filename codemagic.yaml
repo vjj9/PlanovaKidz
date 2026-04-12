@@ -36,20 +36,22 @@ workflows:
           npx cap add ios
           npx cap sync ios
           
-          # Debug: Check the bundle ID in the project
+          # FORCE the bundle ID in the Xcode project file
+          # This ensures the project matches your provisioning profile
+          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*;/PRODUCT_BUNDLE_IDENTIFIER = com.smartplanner.kids;/g' ios/App/App.xcodeproj/project.pbxproj
+          
           echo "Current Bundle ID in project:"
           grep "PRODUCT_BUNDLE_IDENTIFIER" ios/App/App.xcodeproj/project.pbxproj | head -n 1
           
-          # NOW apply the provisioning profiles
-          # We use --bundle-id to force it to match our app
+          # List available profiles for debugging
+          echo "Available Provisioning Profiles:"
+          ls -l ~/Library/MobileDevice/Provisioning\ Profiles || echo "No profiles found in directory"
+          
+          # Apply the provisioning profiles
           xcode-project use-profiles --bundle-id com.smartplanner.kids
           
-          # Verify the export options were generated
-          if [ -f "/Users/builder/export_options.plist" ]; then
-            echo "Export options generated successfully."
-          else
-            echo "WARNING: export_options.plist not found. Signing might fail."
-          fi
+          # Check if the signing file was created
+          ls -l /Users/builder/export_options.plist || echo "export_options.plist STILL MISSING"
       - name: Build iOS IPA
         script: |
           # Build the IPA using the generated export options
