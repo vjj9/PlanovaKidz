@@ -16,8 +16,11 @@ workflows:
           npm run build
       - name: Sync Capacitor
         script: |
-          # Add iOS platform if it doesn't exist
-          if [ ! -d "ios" ]; then
+          # Ensure the iOS platform is fully initialized
+          # If the workspace is missing (common when pushing from Windows), recreate it
+          if [ ! -d "ios/App/App.xcworkspace" ]; then
+            echo "iOS workspace not found. Re-initializing iOS platform..."
+            rm -rf ios
             npx cap add ios
           fi
           npx cap sync ios
