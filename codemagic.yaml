@@ -155,6 +155,7 @@ workflows:
     max_build_duration: 120
     environment:
       node: latest
+      java: 21
     scripts:
       - name: Install dependencies
         script: |
