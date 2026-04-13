@@ -137,7 +137,26 @@ Apple requires a "Distribution Certificate" to sign your app. Usually, this is d
 1. **Identifier:** In the Apple Developer portal, create an **App ID** (e.g., `com.planovakidz.app`).
 2. **Profile:** Create a **Provisioning Profile** (Distribution type), link it to your App ID and your new Certificate, and download it.
 
-### 3. Use Codemagic for the Final Build (The "Mac in the Cloud")
+### 3. Set up Codemagic Environment Variables (CRITICAL)
+For the AI features (Story & Weekly Plan) to work in the native app, you **must** add your API key to Codemagic:
+
+1.  In Codemagic, go to your **App settings** -> **Environment variables**.
+2.  Add a new variable:
+    *   **Variable name:** `GEMINI_API_KEY`
+    *   **Variable value:** (Paste your Gemini API Key here)
+    *   **Group:** `apple_credentials` (or any group used in your workflow)
+3.  **Why?** The native app is built on a separate server. If this key isn't there during the build, the AI features will be "empty" in the app.
+
+### 4. Set up the App Icon
+If your app icon is missing or showing the default logo:
+
+1.  Create a folder named `assets` in your project root.
+2.  Place two images inside:
+    *   `assets/icon-only.png` (1024x1024, no rounded corners)
+    *   `assets/splash.png` (2732x2732)
+3.  The `codemagic.yaml` is already configured to automatically process these and apply them to your iPhone app during the next build.
+
+### 5. Use Codemagic for the Final Build (The "Mac in the Cloud")
 
 I have created a `codemagic.yaml` file in your project. This file tells Codemagic exactly how to build your app. Here is how to finish the setup:
 

@@ -166,8 +166,20 @@ export default function App() {
   const [storyAudio, setStoryAudio] = useState<string | null>(null);
   const [storyText, setStoryText] = useState<string | null>(null);
   const [isStoryPlaying, setIsStoryPlaying] = useState(false);
+  const [apiKeyMissing, setApiKeyMissing] = useState(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+
+  useEffect(() => {
+    console.log("Planova Kidz: App initialized");
+    console.log("Planova Kidz: Platform:", (window as any).Capacitor?.getPlatform() || 'web');
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn("Planova Kidz: GEMINI_API_KEY is missing in this build!");
+      setApiKeyMissing(true);
+    } else {
+      console.log("Planova Kidz: GEMINI_API_KEY is present.");
+    }
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -459,16 +471,17 @@ export default function App() {
   const generatePlan = async () => {
     setIsGenerating(true);
     setActiveTab('plan');
-    console.log("Generating plan with inputs:", { fixedClasses, settings });
+    console.log("Planova Kidz: Generating plan with inputs:", { fixedClasses, settings, practiceGoals, chores, freeTimes });
     try {
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        throw new Error("Gemini API Key is missing. Please ensure it is set in the environment.");
+        console.error("Planova Kidz: Gemini API Key is missing!");
+        throw new Error("Gemini API Key is missing. Please ensure it is set in the Secrets panel.");
       }
 
       const ai = new GoogleGenAI({ apiKey });
       const prompt = `
-        Create a concise weekly schedule for a child.
+        Create a concise weekly schedule for a child named ${userName || 'Kid'}.
         
         INPUTS:
         - Bedtime: ${format12h(settings.bedtime)}
@@ -480,10 +493,10 @@ export default function App() {
         
         RULES:
         1. Start Sunday, end Saturday.
-        2. Include CLASSES and FREE TIME at their specific times.
+        2. Include ALL CLASSES and FREE TIME at their specific times.
         3. Fit GOALS and CHORES into remaining time before ${format12h(settings.bedtime)}.
         4. Fill gaps with "Nothing For Today !". Group consecutive gaps into one block.
-        5. Return ONLY JSON.
+        5. Return ONLY valid JSON.
         
         JSON Schema:
         {
@@ -492,7 +505,7 @@ export default function App() {
         }
       `;
 
-      console.log("Calling Gemini API (Ultra-fast mode)...");
+      console.log("Planova Kidz: Calling Gemini API...");
       const response = await ai.models.generateContent({
         model: "gemini-3.1-flash-lite-preview",
         contents: prompt,
@@ -500,17 +513,20 @@ export default function App() {
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
+            required: ["days", "tips"],
             properties: {
               days: {
                 type: Type.ARRAY,
                 items: {
                   type: Type.OBJECT,
+                  required: ["day", "slots"],
                   properties: {
                     day: { type: Type.STRING },
                     slots: {
                       type: Type.ARRAY,
                       items: {
                         type: Type.OBJECT,
+                        required: ["time", "activity", "duration", "type"],
                         properties: {
                           time: { type: Type.STRING },
                           activity: { type: Type.STRING },
@@ -532,12 +548,14 @@ export default function App() {
         }
       });
 
-      console.log("Gemini API Response received.");
+      console.log("Planova Kidz: Gemini API Response received.");
       if (!response.text) {
+        console.error("Planova Kidz: Empty response from Gemini API.");
         throw new Error("Empty response from Gemini API.");
       }
 
       const result = JSON.parse(response.text);
+      console.log("Planova Kidz: Parsed result:", result);
       
       // Check if user cancelled while waiting
       if (generationActive.current) {
@@ -633,7 +651,10 @@ export default function App() {
     
     try {
       const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) return;
+      if (!apiKey) {
+        console.error("Planova Kidz: Gemini API Key is missing for story generation!");
+        return;
+      }
 
       const ai = new GoogleGenAI({ apiKey });
       
@@ -651,15 +672,16 @@ export default function App() {
       ];
       const randomTheme = themes[Math.floor(Math.random() * themes.length)];
 
-      console.log("Generating story text...");
+      console.log("Planova Kidz: Generating story text for theme:", randomTheme);
       const textResponse = await ai.models.generateContent({
         model: "gemini-3.1-flash-lite-preview",
         contents: `Tell a very short, exciting 3-sentence story for a child about ${randomTheme}.`,
       });
       const text = textResponse.text || "Once upon a time, there was a magical adventure...";
+      console.log("Planova Kidz: Story text generated:", text);
       setStoryText(text);
 
-      console.log("Generating story audio...");
+      console.log("Planova Kidz: Generating story audio...");
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: `Read this excitedly: ${text}` }] }],
@@ -677,11 +699,14 @@ export default function App() {
       const base64Audio = audioPart?.inlineData?.data;
       
       if (base64Audio) {
+        console.log("Planova Kidz: Story audio generated successfully.");
         setStoryAudio(base64Audio);
         playPCM(base64Audio);
+      } else {
+        console.error("Planova Kidz: No audio data in Gemini response.");
       }
     } catch (error) {
-      console.error("Failed to generate story:", error);
+      console.error("Planova Kidz: Failed to generate story:", error);
     } finally {
       setIsStoryLoading(false);
     }
@@ -696,7 +721,12 @@ export default function App() {
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 pb-12">
         <header className="space-y-1">
           <div className="flex items-center justify-between">
-            <h2 className={`text-3xl font-black tracking-tight ${theme.text}`}>Hello, {userName}! 👋</h2>
+            <div className="flex items-center gap-3">
+              <div className={`w-12 h-12 ${theme.bg} rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100`}>
+                <Sparkles className="w-7 h-7 text-white" />
+              </div>
+              <h2 className={`text-3xl font-black tracking-tight ${theme.text}`}>Hello, {userName}! 👋</h2>
+            </div>
             <button 
               onClick={() => {
                 setActiveTab('profile');
@@ -1776,6 +1806,17 @@ export default function App() {
       <div className="h-6 bg-white w-full sticky top-0 z-50 md:hidden" />
 
       <main className="pb-24 pt-4 px-6 max-w-md mx-auto">
+        <AnimatePresence>
+          {apiKeyMissing && (
+            <motion.div 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              className="bg-rose-500 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest text-center mb-4 shadow-lg shadow-rose-100"
+            >
+              ⚠️ Gemini API Key is missing! <br/> AI features will not work.
+            </motion.div>
+          )}
+        </AnimatePresence>
         <AnimatePresence mode="wait">
           {activeTab === 'home' && renderHome()}
           {activeTab === 'schedule' && renderSchedule()}

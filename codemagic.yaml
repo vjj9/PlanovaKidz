@@ -52,12 +52,24 @@ workflows:
           ls ~/Library/MobileDevice/Provisioning\ Profiles/
       - name: Build web app
         script: |
+          # Ensure GEMINI_API_KEY is available for the build
+          # If it's not in the environment, Vite will bundle 'undefined'
+          export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
           npm run build
       - name: Sync Capacitor
         script: |
           # Always recreate the iOS platform from scratch on the build server
           echo "Re-initializing iOS platform for a clean build..."
           rm -rf ios
+          
+          # Generate native assets (icons/splash) if the assets folder exists
+          if [ -d "assets" ]; then
+            echo "Generating native assets..."
+            npm run resources || echo "⚠️ Asset generation failed. Using defaults."
+          else
+            echo "ℹ️ No 'assets' folder found. Using default Capacitor icons."
+          fi
+
           npx cap add ios
           npx cap sync ios
           
