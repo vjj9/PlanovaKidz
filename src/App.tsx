@@ -1697,7 +1697,7 @@ export default function App() {
             <div className="w-24 h-24 bg-indigo-600 rounded-[32px] flex items-center justify-center mx-auto shadow-2xl shadow-indigo-200 rotate-12">
               <Sparkles className="w-12 h-12 text-white" />
             </div>
-            <h1 className="text-4xl font-black text-slate-900 tracking-tight">Kid Planner</h1>
+            <h1 className="text-4xl font-black text-slate-900 tracking-tight">Planova Kidz</h1>
             <p className="text-slate-500 font-medium">Let's build your perfect week together!</p>
           </div>
 
@@ -1828,7 +1828,7 @@ export default function App() {
                 </motion.div>
               ) : (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                  <h3 className="font-black text-2xl bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">{userName || 'Kid Planner'}</h3>
+                  <h3 className="font-black text-2xl bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">{userName || 'Planova Kidz'}</h3>
                   <p className="text-slate-400 font-bold tracking-widest text-xs uppercase mt-1">v1.0.0</p>
                 </motion.div>
               )}

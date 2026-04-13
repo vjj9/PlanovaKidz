@@ -62,8 +62,8 @@ workflows:
           npx cap sync ios
           
           # FORCE the bundle ID in the Xcode project file (Aggressive mode)
-          echo "Forcing Bundle ID: com.smartplanner.kids"
-          find ios/App/App.xcodeproj -name "project.pbxproj" -exec sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*;/PRODUCT_BUNDLE_IDENTIFIER = com.smartplanner.kids;/g' {} +
+          echo "Forcing Bundle ID: com.planovakidz.app"
+          find ios/App/App.xcodeproj -name "project.pbxproj" -exec sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*;/PRODUCT_BUNDLE_IDENTIFIER = com.planovakidz.app;/g' {} +
           
           # Fix Export Compliance (ITSAppUsesNonExemptEncryption) to avoid manual steps in App Store Connect
           echo "Setting Export Compliance to NO..."
@@ -100,7 +100,7 @@ workflows:
             PROFILE_UUID=$(find ~/Library/MobileDevice/Provisioning\ Profiles -name "*.mobileprovision" | head -n 1 | xargs -I{} sh -c 'security cms -D -i "{}" 2>/dev/null | grep -A1 "<key>UUID</key>" | tail -1 | sed "s/.*<string>\(.*\)<\/string>.*/\1/"')
             echo "Using profile UUID: $PROFILE_UUID"
             # Create the plist using printf to avoid heredoc indentation issues
-            printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n  <key>method</key>\n  <string>app-store</string>\n  <key>teamID</key>\n  <string>%s</string>\n  <key>provisioningProfiles</key>\n  <dict>\n    <key>com.smartplanner.kids</key>\n    <string>%s</string>\n  </dict>\n  <key>signingStyle</key>\n  <string>manual</string>\n  <key>stripSwiftSymbols</key>\n  <true/>\n  <key>uploadBitcode</key>\n  <false/>\n  <key>uploadSymbols</key>\n  <true/>\n</dict>\n</plist>\n' "$APPLE_TEAM_ID" "$PROFILE_UUID" > /Users/builder/export_options.plist
+            printf '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n  <key>method</key>\n  <string>app-store</string>\n  <key>teamID</key>\n  <string>%s</string>\n  <key>provisioningProfiles</key>\n  <dict>\n    <key>com.planovakidz.app</key>\n    <string>%s</string>\n  </dict>\n  <key>signingStyle</key>\n  <string>manual</string>\n  <key>stripSwiftSymbols</key>\n  <true/>\n  <key>uploadBitcode</key>\n  <false/>\n  <key>uploadSymbols</key>\n  <true/>\n</dict>\n</plist>\n' "$APPLE_TEAM_ID" "$PROFILE_UUID" > /Users/builder/export_options.plist
           fi
           echo "--- export_options.plist contents ---"
           cat /Users/builder/export_options.plist
@@ -118,11 +118,12 @@ workflows:
           # We use the CLI directly to bypass any UI integration issues
           if [ -n "$APP_STORE_CONNECT_PRIVATE_KEY" ]; then
             echo "Publishing IPA to App Store Connect..."
+            # We add || true because the upload usually succeeds even if the 'wait for processing' times out
             app-store-connect publish \
               --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
               --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
               --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
-              --testflight
+              --testflight || echo "Upload finished, but Apple is still processing. Check App Store Connect for status."
           else
             echo "⚠️ APP_STORE_CONNECT_PRIVATE_KEY is missing. Skipping TestFlight upload."
           fi

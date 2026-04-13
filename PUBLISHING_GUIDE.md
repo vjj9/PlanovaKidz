@@ -1,4 +1,4 @@
-# Publishing Guide for Smart Planner For Kids
+# Publishing Guide for Planova Kidz
 
 This project is pre-configured to be published as both a **Progressive Web App (PWA)** and a **Native Mobile App** (iOS/Android).
 
@@ -134,7 +134,7 @@ Apple requires a "Distribution Certificate" to sign your app. Usually, this is d
    ```
 
 ### 2. Create an App ID and Provisioning Profile
-1. **Identifier:** In the Apple Developer portal, create an **App ID** (e.g., `com.smartplanner.kids`).
+1. **Identifier:** In the Apple Developer portal, create an **App ID** (e.g., `com.planovakidz.app`).
 2. **Profile:** Create a **Provisioning Profile** (Distribution type), link it to your App ID and your new Certificate, and download it.
 
 ### 3. Use Codemagic for the Final Build (The "Mac in the Cloud")

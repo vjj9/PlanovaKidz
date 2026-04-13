@@ -1,8 +1,8 @@
 import { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.smartplanner.kids',
-  appName: 'Smart Planner For Kids',
+  appId: 'com.planovakidz.app',
+  appName: 'Planova Kidz',
   webDir: 'dist',
   server: {
     androidScheme: 'https'
