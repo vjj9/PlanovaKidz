@@ -154,8 +154,6 @@ workflows:
     instance_type: mac_mini_m1
     max_build_duration: 120
     environment:
-      groups:
-        - google_play_credentials # You'll need to create this in Codemagic
       node: latest
     scripts:
       - name: Install dependencies
