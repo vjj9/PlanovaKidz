@@ -65,6 +65,18 @@ workflows:
           echo "Forcing Bundle ID: com.smartplanner.kids"
           find ios/App/App.xcodeproj -name "project.pbxproj" -exec sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*;/PRODUCT_BUNDLE_IDENTIFIER = com.smartplanner.kids;/g' {} +
           
+          # Fix Export Compliance (ITSAppUsesNonExemptEncryption) to avoid manual steps in App Store Connect
+          echo "Setting Export Compliance to NO..."
+          PLIST="ios/App/App/Info.plist"
+          if [ -f "$PLIST" ]; then
+            /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$PLIST"
+          fi
+
+          # Increment build number based on timestamp to ensure unique builds
+          BUILD_NUMBER=$(date +%s)
+          echo "Setting Build Number to $BUILD_NUMBER"
+          find ios/App/App.xcodeproj -name "project.pbxproj" -exec sed -i '' "s/CURRENT_PROJECT_VERSION = .*;/CURRENT_PROJECT_VERSION = $BUILD_NUMBER;/g" {} +
+
           # Inspect the Provisioning Profile to see what ID it expects
           echo "--- Inspecting Provisioning Profile ---"
           PROFILE_PATH=$(find ~/Library/MobileDevice/Provisioning\ Profiles -name "*.mobileprovision" | head -n 1)
