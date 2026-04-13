@@ -9,8 +9,6 @@ workflows:
       node: latest
       xcode: latest
       cocoapods: default
-    integrations:
-      app_store_connect: smartplanner
     scripts:
       - name: Install dependencies
         script: |
@@ -102,12 +100,23 @@ workflows:
             --project ios/App/App.xcodeproj \
             --scheme App \
             --export-options-plist /Users/builder/export_options.plist
+      - name: Publish to TestFlight
+        script: |
+          # Use the API Key variables to upload the IPA to Apple
+          # We use the CLI directly to bypass any UI integration issues
+          if [ -n "$APP_STORE_CONNECT_PRIVATE_KEY" ]; then
+            echo "Publishing IPA to App Store Connect..."
+            app-store-connect publish \
+              --issuer-id "$APP_STORE_CONNECT_ISSUER_ID" \
+              --key-id "$APP_STORE_CONNECT_KEY_IDENTIFIER" \
+              --private-key "$APP_STORE_CONNECT_PRIVATE_KEY" \
+              --testflight
+          else
+            echo "⚠️ APP_STORE_CONNECT_PRIVATE_KEY is missing. Skipping TestFlight upload."
+          fi
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
       email:
         recipients:
           - vjayjaina@gmail.com
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
