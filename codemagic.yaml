@@ -148,3 +148,51 @@ workflows:
       email:
         recipients:
           - vjayjaina@gmail.com
+
+  android-release:
+    name: Android Release Build
+    instance_type: mac_mini_m1
+    max_build_duration: 120
+    environment:
+      groups:
+        - google_play_credentials # You'll need to create this in Codemagic
+      node: latest
+    scripts:
+      - name: Install dependencies
+        script: |
+          npm install
+      - name: Build web app
+        script: |
+          export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
+          npm run build
+      - name: Sync Capacitor Android
+        script: |
+          # Clean start for Android
+          rm -rf android
+          npx cap add android
+          
+          # Generate native assets (icons/splash)
+          if [ -d "assets" ]; then
+            echo "Generating native assets..."
+            npm run resources || echo "⚠️ Asset generation failed."
+          fi
+
+          # Copy google-services.json if it exists in the root
+          if [ -f "google-services.json" ]; then
+            echo "Copying google-services.json to Android project..."
+            cp google-services.json android/app/
+          else
+            echo "⚠️ google-services.json NOT FOUND. Firebase will not work on Android."
+          fi
+
+          npx cap sync android
+      - name: Build Android AAB
+        script: |
+          cd android
+          ./gradlew bundleRelease
+    artifacts:
+      - android/app/build/outputs/bundle/release/*.aab
+    publishing:
+      email:
+        recipients:
+          - vjayjaina@gmail.com
