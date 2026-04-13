@@ -62,7 +62,11 @@ workflows:
           echo "Re-initializing iOS platform for a clean build..."
           rm -rf ios
           
+          # Add the platform first so the folder exists
+          npx cap add ios
+
           # Generate native assets (icons/splash) if the assets folder exists
+          # We do this AFTER 'cap add' so we overwrite the default Capacitor icons
           if [ -d "assets" ]; then
             echo "Generating native assets..."
             npm run resources || echo "⚠️ Asset generation failed. Using defaults."
@@ -70,7 +74,6 @@ workflows:
             echo "ℹ️ No 'assets' folder found. Using default Capacitor icons."
           fi
 
-          npx cap add ios
           npx cap sync ios
           
           # FORCE the bundle ID in the Xcode project file (Aggressive mode)
