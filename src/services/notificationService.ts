@@ -13,8 +13,23 @@ const DAY_MAP: Record<DayOfWeek, number> = {
 
 export class NotificationService {
   static async requestPermissions() {
-    const { display } = await LocalNotifications.requestPermissions();
-    return display === 'granted';
+    try {
+      const { display } = await LocalNotifications.requestPermissions();
+      return display;
+    } catch (e) {
+      console.warn('LocalNotifications not available', e);
+      return 'denied' as const;
+    }
+  }
+
+  static async checkPermissions() {
+    try {
+      const { display } = await LocalNotifications.checkPermissions();
+      return display;
+    } catch (e) {
+      console.warn('LocalNotifications not available', e);
+      return 'denied' as const;
+    }
   }
 
   static async scheduleFixedClassReminders(fixedClasses: FixedClass[]) {
@@ -26,13 +41,20 @@ export class NotificationService {
     fixedClasses.forEach(cls => {
       if (!cls.reminder) return;
 
-      const [hour, minute] = cls.startTime.split(':').map(Number);
+      const timeParts = cls.startTime.split(':').map(Number);
+      if (timeParts.length !== 2 || isNaN(timeParts[0]) || isNaN(timeParts[1])) {
+        console.error(`Invalid start time for class ${cls.name}: ${cls.startTime}`);
+        return;
+      }
+      const [hour, minute] = timeParts;
       
       cls.days.forEach(day => {
+        const id = this.generateId(`class-${cls.id}-${day}`);
+        console.log(`Scheduling notification for ${cls.name} on ${day} at ${hour}:${minute} (ID: ${id})`);
         notifications.push({
           title: `Time for ${cls.name}!`,
           body: `Your ${cls.name} class is starting now.`,
-          id: this.generateId(`class-${cls.id}-${day}`),
+          id,
           schedule: {
             on: {
               weekday: DAY_MAP[day],
@@ -49,6 +71,7 @@ export class NotificationService {
     });
 
     if (notifications.length > 0) {
+      console.log(`Scheduling ${notifications.length} fixed class reminders...`);
       await LocalNotifications.schedule({ notifications });
     }
   }
@@ -73,10 +96,12 @@ export class NotificationService {
         if (ampm === 'PM' && hour < 12) hour += 12;
         if (ampm === 'AM' && hour === 12) hour = 0;
         
+        const id = this.generateId(`plan-${dayPlan.day}-${index}`);
+        console.log(`Scheduling plan notification for ${slot.activity} on ${dayPlan.day} at ${hour}:${minute} (ID: ${id})`);
         notifications.push({
           title: `Next Activity: ${slot.activity}`,
           body: `It's time for ${slot.activity} (${slot.duration}).`,
-          id: this.generateId(`plan-${dayPlan.day}-${index}`),
+          id,
           schedule: {
             on: {
               weekday: DAY_MAP[dayPlan.day],
@@ -93,6 +118,7 @@ export class NotificationService {
     });
 
     if (notifications.length > 0) {
+      console.log(`Scheduling ${notifications.length} weekly plan reminders...`);
       await LocalNotifications.schedule({ notifications });
     }
   }

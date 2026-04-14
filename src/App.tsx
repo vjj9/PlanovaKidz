@@ -274,11 +274,15 @@ export default function App() {
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
   const [editingFreeTimeId, setEditingFreeTimeId] = useState<string | null>(null);
 
+  const [notificationStatus, setNotificationStatus] = useState<'granted' | 'denied' | 'prompt'>('prompt');
+
   // Load data from localStorage on mount
   useEffect(() => {
     const initNotifications = async () => {
-      const granted = await NotificationService.requestPermissions();
-      if (granted) {
+      const status = await NotificationService.checkPermissions();
+      setNotificationStatus(status);
+      
+      if (status === 'granted') {
         await NotificationService.registerActionTypes();
         
         // Listen for notification actions
@@ -302,15 +306,48 @@ export default function App() {
 
     if (savedClasses) {
       const parsed = JSON.parse(savedClasses);
-      setFixedClasses(parsed.map((c: any) => ({
+      const normalized = parsed.map((c: any) => ({
         ...c,
         days: c.days || (c.day ? [c.day] : []),
         day: undefined
-      })));
+      }));
+      // Cleanup duplicates from saved data (merge overlapping days for same class/time)
+      const mergedClasses = normalized.reduce((acc: any[], current: any) => {
+        const currentName = current.name.trim().toLowerCase();
+        const currentTime = current.startTime;
+        
+        const existing = acc.find(item => 
+          item.name.trim().toLowerCase() === currentName && 
+          item.startTime === currentTime
+        );
+        
+        if (existing) {
+          const allDays = Array.from(new Set([...existing.days, ...current.days]));
+          existing.days = allDays;
+          // Keep the reminder if either has it
+          existing.reminder = existing.reminder || current.reminder;
+          return acc;
+        }
+        return acc.concat([{...current}]);
+      }, []);
+      setFixedClasses(mergedClasses);
     }
     if (savedPractice) setPracticeGoals(JSON.parse(savedPractice));
     if (savedChores) setChores(JSON.parse(savedChores));
-    if (savedFreeTimes) setFreeTimes(JSON.parse(savedFreeTimes));
+    if (savedFreeTimes) {
+      const parsed = JSON.parse(savedFreeTimes);
+      // Cleanup duplicates
+      const uniqueFreeTimes = parsed.reduce((acc: any[], current: any) => {
+        const isDuplicate = acc.find(item => 
+          item.name === current.name && 
+          item.startTime === current.startTime && 
+          JSON.stringify([...item.days].sort()) === JSON.stringify([...current.days].sort())
+        );
+        if (!isDuplicate) return acc.concat([current]);
+        return acc;
+      }, []);
+      setFreeTimes(uniqueFreeTimes);
+    }
     if (savedSettings) {
       const parsed = JSON.parse(savedSettings);
       
@@ -340,29 +377,124 @@ export default function App() {
     NotificationService.scheduleFixedClassReminders(fixedClasses);
   }, [userName, fixedClasses, practiceGoals, chores, settings, plan]);
 
+  const requestNotificationPermission = async () => {
+    console.log('Planova Kidz: Requesting notification permissions...');
+    try {
+      const status = await NotificationService.requestPermissions();
+      console.log('Planova Kidz: Permission result:', status);
+      setNotificationStatus(status);
+      
+      if (status === 'granted') {
+        await NotificationService.registerActionTypes();
+        alert('Notifications enabled! You will now receive reminders for your activities.');
+      } else if (status === 'denied') {
+        alert('Notification permission is denied. Please go to your iPhone Settings > Planova Kidz > Notifications and turn them on manually.');
+      }
+    } catch (error) {
+      console.error('Planova Kidz: Error requesting permissions:', error);
+      alert('Something went wrong while requesting permissions. Please check your phone settings.');
+    }
+  };
+
+  const testNotification = async () => {
+    console.log('Planova Kidz: Running test notification...');
+    if (notificationStatus !== 'granted') {
+      const status = await NotificationService.requestPermissions();
+      setNotificationStatus(status);
+      if (status !== 'granted') return;
+    }
+
+    await LocalNotifications.schedule({
+      notifications: [
+        {
+          title: "Test Notification! 🔔",
+          body: "If you see this, notifications are working correctly.",
+          id: 999,
+          schedule: { at: new Date(Date.now() + 5000) }, // 5 seconds from now
+          sound: 'default'
+        }
+      ]
+    });
+    alert('Test notification scheduled for 5 seconds from now. Please lock your screen or go to the home screen to see it.');
+  };
+
   const handleAddClass = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newClassName || newClassDays.length === 0) return;
+    console.log('Planova Kidz: Attempting to save class...', { newClassName, newClassDays, newClassTime });
+
+    if (!newClassName || newClassName.trim() === '') {
+      alert("Please enter a class name! 🎹");
+      return;
+    }
+    if (newClassDays.length === 0) {
+      alert("Please select at least one day for the class! 📅");
+      return;
+    }
     
     if (editingClassId) {
-      setFixedClasses(fixedClasses.map(c => c.id === editingClassId ? {
-        ...c,
-        name: newClassName,
-        days: newClassDays,
-        startTime: newClassTime,
-        duration: newClassDuration,
-        reminder: newClassReminder
-      } : c));
+      console.log('Planova Kidz: Updating existing class...', editingClassId);
+      const otherClasses = fixedClasses.filter(c => c.id !== editingClassId);
+      const conflictingIndex = otherClasses.findIndex(c => 
+        c.name.trim().toLowerCase() === newClassName.trim().toLowerCase() && 
+        c.startTime === newClassTime
+      );
+
+      if (conflictingIndex !== -1) {
+        console.log('Planova Kidz: Update conflicts with existing entry, merging...');
+        const updatedClasses = [...otherClasses];
+        const existing = updatedClasses[conflictingIndex];
+        const mergedDays = Array.from(new Set([...existing.days, ...newClassDays])) as DayOfWeek[];
+        
+        updatedClasses[conflictingIndex] = {
+          ...existing,
+          days: mergedDays,
+          duration: newClassDuration,
+          reminder: newClassReminder || existing.reminder
+        };
+        setFixedClasses(updatedClasses);
+      } else {
+        setFixedClasses(fixedClasses.map(c => c.id === editingClassId ? {
+          ...c,
+          name: newClassName.trim(),
+          days: newClassDays,
+          startTime: newClassTime,
+          duration: newClassDuration,
+          reminder: newClassReminder
+        } : c));
+      }
       setEditingClassId(null);
     } else {
-      setFixedClasses([...fixedClasses, { 
-        id: crypto.randomUUID(), 
-        name: newClassName, 
-        days: newClassDays,
-        startTime: newClassTime,
-        duration: newClassDuration,
-        reminder: newClassReminder
-      }]);
+      // AUTO-MERGE LOGIC: If a class with same name and time exists, merge the days
+      const existingIndex = fixedClasses.findIndex(c => 
+        c.name.trim().toLowerCase() === newClassName.trim().toLowerCase() && 
+        c.startTime === newClassTime
+      );
+
+      if (existingIndex !== -1) {
+        console.log('Planova Kidz: Found existing class, merging days...');
+        const updatedClasses = [...fixedClasses];
+        const existing = updatedClasses[existingIndex];
+        // Union of days
+        const mergedDays = Array.from(new Set([...existing.days, ...newClassDays])) as DayOfWeek[];
+        
+        updatedClasses[existingIndex] = {
+          ...existing,
+          days: mergedDays,
+          duration: newClassDuration,
+          reminder: newClassReminder
+        };
+        setFixedClasses(updatedClasses);
+      } else {
+        console.log('Planova Kidz: Adding brand new class entry...');
+        setFixedClasses([...fixedClasses, { 
+          id: `class-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`, 
+          name: newClassName.trim(), 
+          days: newClassDays,
+          startTime: newClassTime,
+          duration: newClassDuration,
+          reminder: newClassReminder
+        }]);
+      }
     }
     
     setNewClassName('');
@@ -384,6 +516,10 @@ export default function App() {
       } : p));
       setEditingPracticeId(null);
     } else {
+      if (practiceGoals.some(p => p.name.toLowerCase() === newPracticeName.toLowerCase())) {
+        alert("This practice goal already exists!");
+        return;
+      }
       setPracticeGoals([...practiceGoals, {
         id: crypto.randomUUID(),
         name: newPracticeName,
@@ -409,6 +545,10 @@ export default function App() {
       } : c));
       setEditingChoreId(null);
     } else {
+      if (chores.some(c => c.name.toLowerCase() === newChoreName.toLowerCase())) {
+        alert("This chore already exists!");
+        return;
+      }
       setChores([...chores, {
         id: crypto.randomUUID(),
         name: newChoreName,
@@ -461,6 +601,18 @@ export default function App() {
       } : f));
       setEditingFreeTimeId(null);
     } else {
+      // Prevent duplicates
+      const isDuplicate = freeTimes.some(f => 
+        f.name.toLowerCase() === newFreeTimeName.toLowerCase() &&
+        f.startTime === newFreeTimeTime &&
+        JSON.stringify([...f.days].sort()) === JSON.stringify([...newFreeTimeDays].sort())
+      );
+
+      if (isDuplicate) {
+        alert("This free time activity already exists for these days!");
+        return;
+      }
+
       setFreeTimes([...freeTimes, { 
         id: crypto.randomUUID(), 
         name: newFreeTimeName, 
@@ -989,10 +1141,13 @@ export default function App() {
           </div>
           <button 
             onClick={() => {
-              if (showAddClass) {
+              if (!showAddClass) {
+                // Opening the form - reset to defaults
                 setEditingClassId(null);
                 setNewClassName('');
-                setNewClassDays(['Sunday']);
+                setNewClassDays([]);
+                setNewClassTime('16:00');
+                setNewClassDuration('30m');
                 setNewClassReminder(false);
               }
               setShowAddClass(!showAddClass);
@@ -1091,8 +1246,11 @@ export default function App() {
                   <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-all ${newClassReminder ? 'left-5' : 'left-1'}`} />
                 </button>
               </div>
-              <button type="submit" className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-sm">
-                {editingClassId ? 'Update Class' : 'Add Class'}
+              <button 
+                type="submit" 
+                className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 active:bg-indigo-700 transition-all cursor-pointer"
+              >
+                {editingClassId ? 'Update Class' : (fixedClasses.some(c => c.name.toLowerCase() === newClassName.toLowerCase()) ? 'Change Class' : 'Add Class')}
               </button>
             </motion.form>
           )}
@@ -1106,12 +1264,22 @@ export default function App() {
                 <div className="flex gap-2">
                   <button 
                     onClick={() => {
-                      setNewClassName(name);
-                      setShowAddClass(true);
+                      const existing = fixedClasses.find(c => c.name === name);
+                      if (existing) {
+                        startEditClass(existing);
+                      } else {
+                        setEditingClassId(null);
+                        setNewClassName(name);
+                        setNewClassDays([]);
+                        setNewClassTime('16:00');
+                        setNewClassDuration('30m');
+                        setNewClassReminder(false);
+                        setShowAddClass(true);
+                      }
                     }}
-                    className="text-indigo-500 text-[10px] font-bold uppercase hover:underline"
+                    className="text-indigo-500 text-[10px] font-bold uppercase hover:underline active:opacity-50"
                   >
-                    Add Time
+                    Change Class
                   </button>
                 </div>
               </div>
@@ -1825,7 +1993,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 pt-[env(safe-area-inset-top)]">
       <div className="h-6 bg-white w-full sticky top-0 z-50 md:hidden" />
 
       <main className="pb-24 pt-4 px-6 max-w-md mx-auto">
@@ -1846,13 +2014,14 @@ export default function App() {
           {activeTab === 'setup' && renderSetup()}
           {activeTab === 'plan' && renderPlan()}
           {activeTab === 'profile' && (
-            <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+            <div className="flex flex-col items-center justify-center py-12 text-center space-y-6">
               <div className="w-24 h-24 bg-gradient-to-br from-indigo-100 via-violet-100 to-emerald-100 rounded-full flex items-center justify-center shadow-inner">
                 <User className="w-12 h-12 text-violet-600" />
               </div>
 
               {!isEditingProfile && (
                 <button 
+                  type="button"
                   onClick={() => setIsEditingProfile(true)}
                   className="flex items-center gap-2 bg-violet-50 text-violet-600 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-violet-100 transition-all active:scale-95 shadow-sm border border-violet-100"
                 >
@@ -1891,33 +2060,86 @@ export default function App() {
                   </div>
                 </motion.div>
               ) : (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                  <h3 className="font-black text-2xl bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">{userName || 'Planova Kidz'}</h3>
-                  <p className="text-slate-400 font-bold tracking-widest text-xs uppercase mt-1">v1.0.0</p>
-                </motion.div>
+                <div className="w-full max-w-xs space-y-6">
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                    <h3 className="font-black text-2xl bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">{userName || 'Planova Kidz'}</h3>
+                    <p className="text-slate-400 font-bold tracking-widest text-xs uppercase mt-1">v1.0.0</p>
+                  </motion.div>
+
+                  {/* Notification Settings in Me Tab */}
+                  <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-4">
+                    <div className="flex items-center justify-center gap-2 text-slate-600">
+                      <Bell className="w-4 h-4" />
+                      <p className="text-[10px] font-black uppercase tracking-widest">Notifications</p>
+                    </div>
+                    <div className="space-y-2">
+                      {notificationStatus !== 'granted' && (
+                        <button 
+                          type="button"
+                          onClick={requestNotificationPermission}
+                          className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all"
+                        >
+                          {notificationStatus === 'denied' ? 'Fix in Settings' : 'Enable Notifications'}
+                        </button>
+                      )}
+                      <button 
+                        type="button"
+                        onClick={testNotification}
+                        className="w-full bg-slate-50 text-slate-600 py-3 rounded-2xl font-black text-xs uppercase tracking-widest border border-slate-100 active:scale-95 transition-all"
+                      >
+                        Test Notification
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-medium leading-tight">
+                      {notificationStatus === 'granted' 
+                        ? "Reminders are active! You'll get alerts for your classes and activities." 
+                        : notificationStatus === 'denied'
+                        ? "⚠️ Notifications are BLOCKED. Please go to iPhone Settings > Planova Kidz > Notifications and turn on 'Allow Notifications' to get reminders!"
+                        : "Reminders are off. Enable them to stay on track with your schedule!"}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <button 
+                      onClick={() => {
+                        const mergedClasses = fixedClasses.reduce((acc: FixedClass[], current: FixedClass) => {
+                          const currentName = current.name.trim().toLowerCase();
+                          const currentTime = current.startTime;
+                          
+                          const existing = acc.find(item => 
+                            item.name.trim().toLowerCase() === currentName && 
+                            item.startTime === currentTime
+                          );
+                          
+                          if (existing) {
+                            const allDays = Array.from(new Set([...existing.days, ...current.days]));
+                            existing.days = allDays as DayOfWeek[];
+                            existing.reminder = existing.reminder || current.reminder;
+                            return acc;
+                          }
+                          return acc.concat([{...current}]);
+                        }, []);
+                        setFixedClasses(mergedClasses);
+                        alert('All duplicates merged! Your schedule is now clean. ✨');
+                      }}
+                      className="text-indigo-500 font-bold text-xs uppercase tracking-widest"
+                    >
+                      Cleanup Duplicates
+                    </button>
+                    <button 
+                      onClick={() => {
+                        if(confirm('Reset all data?')) {
+                          localStorage.clear();
+                          window.location.reload();
+                        }
+                      }}
+                      className="text-rose-500 font-bold text-xs uppercase tracking-widest pt-2"
+                    >
+                      Reset App Data
+                    </button>
+                  </div>
+                </div>
               )}
-              <div className="pt-8 w-full max-w-[200px] space-y-3">
-                <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full w-1/3 bg-indigo-500" />
-                </div>
-                <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full w-2/3 bg-violet-500" />
-                </div>
-                <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
-                  <div className="h-full w-full bg-emerald-500" />
-                </div>
-              </div>
-              <button 
-                onClick={() => {
-                  if(confirm('Reset all data?')) {
-                    localStorage.clear();
-                    window.location.reload();
-                  }
-                }}
-                className="text-rose-500 font-bold text-sm pt-8 hover:underline"
-              >
-                Reset App Data
-              </button>
             </div>
           )}
         </AnimatePresence>
