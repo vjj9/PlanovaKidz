@@ -530,7 +530,7 @@ export default function App() {
 
       console.log("Planova Kidz: Calling Gemini API...");
       const response = await ai.models.generateContent({
-        model: "gemini-3.1-flash-lite-preview",
+        model: "gemini-3-flash-preview",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -697,7 +697,7 @@ export default function App() {
 
       console.log("Planova Kidz: Generating story text for theme:", randomTheme);
       const textResponse = await ai.models.generateContent({
-        model: "gemini-3.1-flash-lite-preview",
+        model: "gemini-3-flash-preview",
         contents: `Tell a very short, exciting 3-sentence story for a child about ${randomTheme}.`,
       });
       const text = textResponse.text || "Once upon a time, there was a magical adventure...";
