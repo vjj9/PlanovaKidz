@@ -40,6 +40,8 @@ import {
   Chore,
   FreeTime
 } from './types';
+import { NotificationService } from './services/notificationService';
+import { LocalNotifications } from '@capacitor/local-notifications';
 
 const DAYS: DayOfWeek[] = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -274,6 +276,23 @@ export default function App() {
 
   // Load data from localStorage on mount
   useEffect(() => {
+    const initNotifications = async () => {
+      const granted = await NotificationService.requestPermissions();
+      if (granted) {
+        await NotificationService.registerActionTypes();
+        
+        // Listen for notification actions
+        LocalNotifications.addListener('localNotificationActionPerformed', (notification) => {
+          console.log('Notification action performed:', notification);
+          if (notification.actionId === 'done') {
+            // Handle "Done!" action
+            alert('Great job finishing that activity!');
+          }
+        });
+      }
+    };
+    initNotifications();
+
     const savedClasses = localStorage.getItem('kids_fixed_classes');
     const savedPractice = localStorage.getItem('kids_practice_goals');
     const savedChores = localStorage.getItem('kids_chores');
@@ -314,7 +333,11 @@ export default function App() {
     localStorage.setItem('kids_chores', JSON.stringify(chores));
     localStorage.setItem('kids_free_times', JSON.stringify(freeTimes));
     localStorage.setItem('kids_settings', JSON.stringify(settings));
-    if (plan) localStorage.setItem('kids_plan', JSON.stringify(plan));
+    if (plan) {
+      localStorage.setItem('kids_plan', JSON.stringify(plan));
+      NotificationService.scheduleWeeklyPlanReminders(plan);
+    }
+    NotificationService.scheduleFixedClassReminders(fixedClasses);
   }, [userName, fixedClasses, practiceGoals, chores, settings, plan]);
 
   const handleAddClass = (e: React.FormEvent) => {
