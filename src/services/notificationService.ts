@@ -1,4 +1,4 @@
-import { LocalNotifications, ScheduleOptions } from '@capacitor/local-notifications';
+import { LocalNotifications } from '@capacitor/local-notifications';
 import { DayOfWeek, WeeklyPlan, FixedClass } from '../types';
 
 const DAY_MAP: Record<DayOfWeek, number> = {
@@ -128,7 +128,7 @@ export class NotificationService {
     return Math.abs(hash);
   }
 
-  private static async getPendingIdsByPrefix(prefix: string) {
+  private static async getPendingIdsByPrefix(_prefix: string) {
     const pending = await LocalNotifications.getPending();
     // This is a bit tricky since we don't store the original string ID in the notification object
     // But we can filter if we had a way to identify them. 
