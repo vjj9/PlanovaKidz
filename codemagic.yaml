@@ -213,7 +213,7 @@ workflows:
           set -e
           cd android
           chmod +x gradlew
-          ./gradlew bundleRelease
+          ./gradlew clean bundleRelease
     artifacts:
       - android/app/build/outputs/bundle/release/*.aab
     publishing:
