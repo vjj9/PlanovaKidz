@@ -12,10 +12,12 @@ workflows:
     scripts:
       - name: Install dependencies
         script: |
+          set -e
           npm install
           npm list @capacitor/local-notifications || (echo "❌ Package missing, retrying..." && npm install @capacitor/local-notifications)
       - name: Set up code signing
         script: |
+          set -e
           # Initialize the keychain
           keychain initialize
           
@@ -53,18 +55,21 @@ workflows:
           ls ~/Library/MobileDevice/Provisioning\ Profiles/
       - name: Build web app
         script: |
+          set -e
           # Ensure GEMINI_API_KEY is available for the build
           # If it's not in the environment, Vite will bundle 'undefined'
           export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
           npm run build
       - name: Sync Capacitor
         script: |
-          # Always recreate the iOS platform from scratch on the build server
-          echo "Re-initializing iOS platform for a clean build..."
-          rm -rf ios
-          
-          # Add the platform first so the folder exists
-          npx cap add ios
+          set -e
+          # Ensure the ios platform exists
+          if [ ! -d "ios" ]; then
+            echo "Adding iOS platform..."
+            npx cap add ios
+          else
+            echo "iOS platform already exists, syncing..."
+          fi
 
           # Generate native assets (icons/splash) if the assets folder exists
           # We do this AFTER 'cap add' so we overwrite the default Capacitor icons
@@ -77,6 +82,13 @@ workflows:
 
           npx cap sync ios
           
+          # Verify the project exists
+          if [ ! -d "ios/App/App.xcodeproj" ]; then
+            echo "❌ ERROR: ios/App/App.xcodeproj was not created!"
+            ls -R ios
+            exit 1
+          fi
+
           # FORCE the bundle ID in the Xcode project file (Aggressive mode)
           echo "Forcing Bundle ID: com.planovakidz.app"
           find ios/App/App.xcodeproj -name "project.pbxproj" -exec sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*;/PRODUCT_BUNDLE_IDENTIFIER = com.planovakidz.app;/g' {} +
@@ -123,6 +135,7 @@ workflows:
           echo "-------------------------------------"
       - name: Build iOS IPA
         script: |
+          set -e
           # Build the IPA using the generated export options
           xcode-project build-ipa \
             --project ios/App/App.xcodeproj \
@@ -130,6 +143,7 @@ workflows:
             --export-options-plist /Users/builder/export_options.plist
       - name: Publish to TestFlight
         script: |
+          set -e
           # Use the API Key variables to upload the IPA to Apple
           # We use the CLI directly to bypass any UI integration issues
           if [ -n "$APP_STORE_CONNECT_PRIVATE_KEY" ]; then
@@ -160,17 +174,24 @@ workflows:
     scripts:
       - name: Install dependencies
         script: |
+          set -e
           npm install
           npm list @capacitor/local-notifications || (echo "❌ Package missing, retrying..." && npm install @capacitor/local-notifications)
       - name: Build web app
         script: |
+          set -e
           export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
           npm run build
       - name: Sync Capacitor Android
         script: |
-          # Clean start for Android
-          rm -rf android
-          npx cap add android
+          set -e
+          # Ensure the android platform exists
+          if [ ! -d "android" ]; then
+            echo "Adding Android platform..."
+            npx cap add android
+          else
+            echo "Android platform already exists, syncing..."
+          fi
           
           # Generate native assets (icons/splash)
           if [ -d "assets" ]; then
@@ -189,6 +210,7 @@ workflows:
           npx cap sync android
       - name: Build Android AAB
         script: |
+          set -e
           cd android
           ./gradlew bundleRelease
     artifacts:
