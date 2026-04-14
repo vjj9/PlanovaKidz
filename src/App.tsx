@@ -247,7 +247,7 @@ export default function App() {
   const [newClassDays, setNewClassDays] = useState<DayOfWeek[]>(['Sunday']);
   const [newClassTime, setNewClassTime] = useState('16:00');
   const [newClassDuration, setNewClassDuration] = useState('30m');
-  const [newClassReminder, setNewClassReminder] = useState(false);
+  const [newClassReminder, setNewClassReminder] = useState(true);
 
   // Practice Goal form states
   const [showAddPractice, setShowAddPractice] = useState(false);
@@ -372,9 +372,10 @@ export default function App() {
     localStorage.setItem('kids_settings', JSON.stringify(settings));
     if (plan) {
       localStorage.setItem('kids_plan', JSON.stringify(plan));
-      NotificationService.scheduleWeeklyPlanReminders(plan);
     }
-    NotificationService.scheduleFixedClassReminders(fixedClasses);
+    
+    // Sync all notifications at once to prevent collisions
+    NotificationService.syncAllNotifications(fixedClasses, plan);
   }, [userName, fixedClasses, practiceGoals, chores, settings, plan]);
 
   const requestNotificationPermission = async () => {
@@ -420,7 +421,7 @@ export default function App() {
 
   const handleAddClass = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Planova Kidz: Attempting to save class...', { newClassName, newClassDays, newClassTime });
+    console.log('Planova Kidz: Attempting to save class...', { newClassName, newClassDays, newClassTime, newClassReminder });
 
     if (!newClassName || newClassName.trim() === '') {
       alert("Please enter a class name! 🎹");
@@ -498,9 +499,9 @@ export default function App() {
     }
     
     setNewClassName('');
-    setNewClassDays(['Sunday']);
+    setNewClassDays([]);
     setShowAddClass(false);
-    setNewClassReminder(false);
+    setNewClassReminder(true);
   };
 
   const handleAddPractice = (e: React.FormEvent) => {
@@ -2100,6 +2101,27 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-col gap-2">
+                    <button 
+                      onClick={async () => {
+                        const pending = await LocalNotifications.getPending();
+                        if (pending.notifications.length === 0) {
+                          alert("No notifications are currently scheduled.");
+                        } else {
+                          const list = pending.notifications.map(n => {
+                            const schedule = n.schedule as any;
+                            if (schedule?.on) {
+                              const days = ['?', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                              return `${n.title} (${days[schedule.on.weekday]} at ${schedule.on.hour}:${schedule.on.minute.toString().padStart(2, '0')})`;
+                            }
+                            return `${n.title} (One-time)`;
+                          }).join('\n');
+                          alert(`Scheduled Notifications (${pending.notifications.length}):\n\n${list}`);
+                        }
+                      }}
+                      className="text-indigo-500 font-bold text-xs uppercase tracking-widest mb-2"
+                    >
+                      Check Scheduled Reminders
+                    </button>
                     <button 
                       onClick={() => {
                         const mergedClasses = fixedClasses.reduce((acc: FixedClass[], current: FixedClass) => {

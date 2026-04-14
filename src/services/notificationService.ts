@@ -32,95 +32,101 @@ export class NotificationService {
     }
   }
 
-  static async scheduleFixedClassReminders(fixedClasses: FixedClass[]) {
-    // Cancel existing notifications first to avoid duplicates
-    await LocalNotifications.cancel({ notifications: await this.getPendingIdsByPrefix('class-') });
-
-    const notifications: any[] = [];
-
-    fixedClasses.forEach(cls => {
-      if (!cls.reminder) return;
-
-      const timeParts = cls.startTime.split(':').map(Number);
-      if (timeParts.length !== 2 || isNaN(timeParts[0]) || isNaN(timeParts[1])) {
-        console.error(`Invalid start time for class ${cls.name}: ${cls.startTime}`);
-        return;
+  static async syncAllNotifications(fixedClasses: FixedClass[], plan: WeeklyPlan | null) {
+    try {
+      // 1. Cancel ALL existing notifications first to start fresh
+      const pending = await LocalNotifications.getPending();
+      if (pending.notifications.length > 0) {
+        await LocalNotifications.cancel({ notifications: pending.notifications.map(n => ({ id: n.id })) });
       }
-      const [hour, minute] = timeParts;
-      
-      cls.days.forEach(day => {
-        const id = this.generateId(`class-${cls.id}-${day}`);
-        console.log(`Scheduling notification for ${cls.name} on ${day} at ${hour}:${minute} (ID: ${id})`);
-        notifications.push({
-          title: `Time for ${cls.name}!`,
-          body: `Your ${cls.name} class is starting now.`,
-          id,
-          schedule: {
-            on: {
-              weekday: DAY_MAP[day],
-              hour,
-              minute
+
+      const notifications: any[] = [];
+
+      // 2. Schedule Fixed Class Reminders
+      fixedClasses.forEach(cls => {
+        if (!cls.reminder) return;
+
+        const timeParts = cls.startTime.split(':').map(Number);
+        if (timeParts.length !== 2 || isNaN(timeParts[0]) || isNaN(timeParts[1])) return;
+        const [hour, minute] = timeParts;
+        
+        cls.days.forEach(day => {
+          const id = this.generateId(`class-${cls.id}-${day}`);
+          notifications.push({
+            title: `Time for ${cls.name}!`,
+            body: `Your ${cls.name} class is starting now.`,
+            id,
+            schedule: {
+              on: {
+                weekday: DAY_MAP[day],
+                hour,
+                minute
+              },
+              repeats: true,
+              allowWhileIdle: true
             },
-            repeats: true,
-            allowWhileIdle: true
-          },
-          sound: 'default',
-          actionTypeId: 'CLASS_REMINDER'
+            sound: 'default',
+            actionTypeId: 'CLASS_REMINDER'
+          });
         });
       });
-    });
 
-    if (notifications.length > 0) {
-      console.log(`Scheduling ${notifications.length} fixed class reminders...`);
-      await LocalNotifications.schedule({ notifications });
+      // 3. Schedule Weekly Plan Reminders
+      if (plan) {
+        plan.days.forEach(dayPlan => {
+          dayPlan.slots.forEach((slot, index) => {
+            if (!slot.reminder) return;
+
+            const timeParts = slot.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+            if (!timeParts) return;
+
+            let hour = parseInt(timeParts[1]);
+            const minute = parseInt(timeParts[2]);
+            const ampm = timeParts[3].toUpperCase();
+
+            if (ampm === 'PM' && hour < 12) hour += 12;
+            if (ampm === 'AM' && hour === 12) hour = 0;
+            
+            const id = this.generateId(`plan-${dayPlan.day}-${index}`);
+            notifications.push({
+              title: `Next Activity: ${slot.activity}`,
+              body: `It's time for ${slot.activity} (${slot.duration}).`,
+              id,
+              schedule: {
+                on: {
+                  weekday: DAY_MAP[dayPlan.day],
+                  hour,
+                  minute
+                },
+                repeats: true,
+                allowWhileIdle: true
+              },
+              sound: 'default',
+              actionTypeId: 'ACTIVITY_REMINDER'
+            });
+          });
+        });
+      }
+
+      // 4. Batch schedule everything
+      if (notifications.length > 0) {
+        console.log(`Planova Kidz: Syncing ${notifications.length} total notifications...`);
+        await LocalNotifications.schedule({ notifications });
+      }
+    } catch (e) {
+      console.error('Planova Kidz: Failed to sync notifications', e);
     }
   }
 
+  static async scheduleFixedClassReminders(fixedClasses: FixedClass[]) {
+    // Keep for backward compatibility if needed, but prefer syncAllNotifications
+    await this.syncAllNotifications(fixedClasses, null);
+  }
+
   static async scheduleWeeklyPlanReminders(plan: WeeklyPlan) {
-    // Cancel existing plan notifications
-    await LocalNotifications.cancel({ notifications: await this.getPendingIdsByPrefix('plan-') });
-
-    const notifications: any[] = [];
-
-    plan.days.forEach(dayPlan => {
-      dayPlan.slots.forEach((slot, index) => {
-        if (!slot.reminder) return;
-
-        const timeParts = slot.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
-        if (!timeParts) return;
-
-        let hour = parseInt(timeParts[1]);
-        const minute = parseInt(timeParts[2]);
-        const ampm = timeParts[3].toUpperCase();
-
-        if (ampm === 'PM' && hour < 12) hour += 12;
-        if (ampm === 'AM' && hour === 12) hour = 0;
-        
-        const id = this.generateId(`plan-${dayPlan.day}-${index}`);
-        console.log(`Scheduling plan notification for ${slot.activity} on ${dayPlan.day} at ${hour}:${minute} (ID: ${id})`);
-        notifications.push({
-          title: `Next Activity: ${slot.activity}`,
-          body: `It's time for ${slot.activity} (${slot.duration}).`,
-          id,
-          schedule: {
-            on: {
-              weekday: DAY_MAP[dayPlan.day],
-              hour,
-              minute
-            },
-            repeats: true,
-            allowWhileIdle: true
-          },
-          sound: 'default',
-          actionTypeId: 'ACTIVITY_REMINDER'
-        });
-      });
-    });
-
-    if (notifications.length > 0) {
-      console.log(`Scheduling ${notifications.length} weekly plan reminders...`);
-      await LocalNotifications.schedule({ notifications });
-    }
+    // Keep for backward compatibility if needed, but prefer syncAllNotifications
+    // Note: This would lose fixed class notifications if called alone, 
+    // so we should ideally always call syncAll with both.
   }
 
   static async registerActionTypes() {
