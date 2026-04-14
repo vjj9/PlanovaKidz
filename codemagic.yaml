@@ -208,14 +208,15 @@ workflows:
           fi
 
           npx cap sync android
-      - name: Build Android AAB
+      - name: Build Android AAB and APK
         script: |
           set -e
           cd android
           chmod +x gradlew
-          ./gradlew clean bundleRelease
+          ./gradlew clean bundleRelease assembleRelease
     artifacts:
       - android/app/build/outputs/bundle/release/*.aab
+      - android/app/build/outputs/apk/**/*.apk
     publishing:
       email:
         recipients:
