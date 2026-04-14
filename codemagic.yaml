@@ -13,6 +13,7 @@ workflows:
       - name: Install dependencies
         script: |
           npm install
+          npm list @capacitor/local-notifications || (echo "❌ Package missing, retrying..." && npm install @capacitor/local-notifications)
       - name: Set up code signing
         script: |
           # Initialize the keychain
@@ -160,6 +161,7 @@ workflows:
       - name: Install dependencies
         script: |
           npm install
+          npm list @capacitor/local-notifications || (echo "❌ Package missing, retrying..." && npm install @capacitor/local-notifications)
       - name: Build web app
         script: |
           export GEMINI_API_KEY="${GEMINI_API_KEY:-}"
