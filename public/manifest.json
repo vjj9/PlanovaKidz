@@ -8,46 +8,44 @@
   "theme_color": "#4f46e5",
   "icons": [
     {
-      "src": "../icons/icon-48.webp",
-      "type": "image/png",
-      "sizes": "48x48",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "../icons/icon-72.webp",
-      "type": "image/png",
+      "src": "https://picsum.photos/seed/planova/72/72",
       "sizes": "72x72",
-      "purpose": "any maskable"
+      "type": "image/png"
     },
     {
-      "src": "../icons/icon-96.webp",
-      "type": "image/png",
+      "src": "https://picsum.photos/seed/planova/96/96",
       "sizes": "96x96",
-      "purpose": "any maskable"
+      "type": "image/png"
     },
     {
-      "src": "../icons/icon-128.webp",
-      "type": "image/png",
+      "src": "https://picsum.photos/seed/planova/128/128",
       "sizes": "128x128",
-      "purpose": "any maskable"
+      "type": "image/png"
     },
     {
-      "src": "../icons/icon-192.webp",
-      "type": "image/png",
+      "src": "https://picsum.photos/seed/planova/144/144",
+      "sizes": "144x144",
+      "type": "image/png"
+    },
+    {
+      "src": "https://picsum.photos/seed/planova/152/152",
+      "sizes": "152x152",
+      "type": "image/png"
+    },
+    {
+      "src": "https://picsum.photos/seed/planova/192/192",
       "sizes": "192x192",
-      "purpose": "any maskable"
+      "type": "image/png"
     },
     {
-      "src": "../icons/icon-256.webp",
-      "type": "image/png",
-      "sizes": "256x256",
-      "purpose": "any maskable"
+      "src": "https://picsum.photos/seed/planova/384/384",
+      "sizes": "384x384",
+      "type": "image/png"
     },
     {
-      "src": "../icons/icon-512.webp",
-      "type": "image/png",
+      "src": "https://picsum.photos/seed/planova/512/512",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "type": "image/png"
     }
   ]
 }
