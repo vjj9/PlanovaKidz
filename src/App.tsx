@@ -146,6 +146,7 @@ const ActivityTimer = ({ durationStr, theme, title }: { durationStr: string, the
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
+  const [showPrivacy, setShowPrivacy] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [userName, setUserName] = useState(() => localStorage.getItem('kids_name') || '');
   const [hasStarted, setHasStarted] = useState(() => !!localStorage.getItem('kids_name'));
@@ -657,7 +658,7 @@ export default function App() {
 
       const ai = new GoogleGenAI({ apiKey });
       const prompt = `
-        Create a concise weekly schedule for a child named ${userName || 'Kid'}.
+        Create a concise weekly schedule for the child.
         
         INPUTS:
         - Bedtime: ${format12h(settings.bedtime)}
@@ -886,6 +887,61 @@ export default function App() {
     } finally {
       setIsStoryLoading(false);
     }
+  };
+
+  const renderPrivacy = () => {
+    return (
+      <motion.div 
+        initial={{ opacity: 0, x: 20 }} 
+        animate={{ opacity: 1, x: 0 }} 
+        exit={{ opacity: 0, x: -20 }}
+        className="space-y-6"
+      >
+        <header className="flex items-center gap-4 mb-8">
+          <button 
+            onClick={() => setShowPrivacy(false)}
+            className="p-2 hover:bg-slate-100 rounded-xl transition-all"
+          >
+            <ChevronLeft className="w-6 h-6 text-slate-400" />
+          </button>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Privacy Policy</h2>
+        </header>
+
+        <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-6 text-left">
+          <section className="space-y-2">
+            <h3 className="font-black text-indigo-600 text-xs uppercase tracking-widest">Our Promise</h3>
+            <p className="text-sm text-slate-600 leading-relaxed font-medium">
+              Planova Kidz is built with your privacy in mind. We do not track your behavior, show ads, or sell your data to anyone.
+            </p>
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="font-black text-rose-600 text-xs uppercase tracking-widest">Local Data</h3>
+            <p className="text-sm text-slate-600 leading-relaxed font-medium">
+              Your name, classes, and settings are stored strictly on your own device using local storage. We do not have a server that saves your personal information.
+            </p>
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="font-black text-emerald-600 text-xs uppercase tracking-widest">Smart Planning (AI)</h3>
+            <p className="text-sm text-slate-600 leading-relaxed font-medium">
+              When you generate a schedule, the activity names and times are shared with Google's Gemini AI to organize your week. This data is only used for the generation process and is not stored by us.
+            </p>
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="font-black text-violet-600 text-xs uppercase tracking-widest">Notifications</h3>
+            <p className="text-sm text-slate-600 leading-relaxed font-medium">
+              Reminders are handled locally on your phone. We do not send push notifications from external servers.
+            </p>
+          </section>
+
+          <div className="pt-4 border-t border-slate-50 flex justify-center">
+            <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">Last Updated: April 2026</p>
+          </div>
+        </div>
+      </motion.div>
+    );
   };
 
   const renderHome = () => {
@@ -2010,159 +2066,172 @@ export default function App() {
           )}
         </AnimatePresence>
         <AnimatePresence mode="wait">
-          {activeTab === 'home' && renderHome()}
-          {activeTab === 'schedule' && renderSchedule()}
-          {activeTab === 'setup' && renderSetup()}
-          {activeTab === 'plan' && renderPlan()}
-          {activeTab === 'profile' && (
-            <div className="flex flex-col items-center justify-center py-12 text-center space-y-6">
-              <div className="w-24 h-24 bg-gradient-to-br from-indigo-100 via-violet-100 to-emerald-100 rounded-full flex items-center justify-center shadow-inner">
-                <User className="w-12 h-12 text-violet-600" />
-              </div>
-
-              {!isEditingProfile && (
-                <button 
-                  type="button"
-                  onClick={() => setIsEditingProfile(true)}
-                  className="flex items-center gap-2 bg-violet-50 text-violet-600 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-violet-100 transition-all active:scale-95 shadow-sm border border-violet-100"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                  Edit Profile
-                </button>
-              )}
-
-              {isEditingProfile ? (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-xs space-y-4">
-                  <div className="bg-white p-4 rounded-2xl border-2 border-indigo-100 shadow-sm space-y-1 text-left">
-                    <label className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">Your Name</label>
-                    <input 
-                      type="text"
-                      value={userName}
-                      onChange={(e) => setUserName(e.target.value)}
-                      className="w-full bg-transparent font-black text-slate-700 focus:outline-none text-lg"
-                      placeholder="Enter your name"
-                      autoFocus
-                    />
+          {showPrivacy ? renderPrivacy() : (
+            <>
+              {activeTab === 'home' && renderHome()}
+              {activeTab === 'schedule' && renderSchedule()}
+              {activeTab === 'setup' && renderSetup()}
+              {activeTab === 'plan' && renderPlan()}
+              {activeTab === 'profile' && (
+                <div className="flex flex-col items-center justify-center py-12 text-center space-y-6">
+                  <div className="w-24 h-24 bg-gradient-to-br from-indigo-100 via-violet-100 to-emerald-100 rounded-full flex items-center justify-center shadow-inner">
+                    <User className="w-12 h-12 text-violet-600" />
                   </div>
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => setIsEditingProfile(false)}
-                      className="flex-1 bg-emerald-500 text-white font-black py-3 rounded-2xl shadow-lg shadow-emerald-100 active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      Save
-                    </button>
-                    <button 
-                      onClick={() => setIsEditingProfile(false)}
-                      className="flex-1 bg-slate-100 text-slate-500 font-black py-3 rounded-2xl active:scale-95 transition-all uppercase tracking-widest text-xs"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </motion.div>
-              ) : (
-                <div className="w-full max-w-xs space-y-6">
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                    <h3 className="font-black text-2xl bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">{userName || 'Planova Kidz'}</h3>
-                    <p className="text-slate-400 font-bold tracking-widest text-xs uppercase mt-1">v1.0.0</p>
-                  </motion.div>
 
-                  {/* Notification Settings in Me Tab */}
-                  <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-4">
-                    <div className="flex items-center justify-center gap-2 text-slate-600">
-                      <Bell className="w-4 h-4" />
-                      <p className="text-[10px] font-black uppercase tracking-widest">Notifications</p>
-                    </div>
-                    <div className="space-y-2">
-                      {notificationStatus !== 'granted' && (
-                        <button 
-                          type="button"
-                          onClick={requestNotificationPermission}
-                          className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all"
-                        >
-                          {notificationStatus === 'denied' ? 'Fix in Settings' : 'Enable Notifications'}
-                        </button>
-                      )}
+                  {!isEditingProfile && (
+                    <div className="flex gap-2">
                       <button 
                         type="button"
-                        onClick={testNotification}
-                        className="w-full bg-slate-50 text-slate-600 py-3 rounded-2xl font-black text-xs uppercase tracking-widest border border-slate-100 active:scale-95 transition-all"
+                        onClick={() => setIsEditingProfile(true)}
+                        className="flex items-center gap-2 bg-violet-50 text-violet-600 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-violet-100 transition-all active:scale-95 shadow-sm border border-violet-100"
                       >
-                        Test Notification
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit Profile
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setShowPrivacy(true)}
+                        className="flex items-center gap-2 bg-slate-100 text-slate-500 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95 shadow-sm border border-slate-200"
+                      >
+                        Privacy
                       </button>
                     </div>
-                    <p className="text-[10px] text-slate-400 font-medium leading-tight">
-                      {notificationStatus === 'granted' 
-                        ? "Reminders are active! You'll get alerts for your classes and activities." 
-                        : notificationStatus === 'denied'
-                        ? "⚠️ Notifications are BLOCKED. Please go to iPhone Settings > Planova Kidz > Notifications and turn on 'Allow Notifications' to get reminders!"
-                        : "Reminders are off. Enable them to stay on track with your schedule!"}
-                    </p>
-                  </div>
+                  )}
 
-                  <div className="flex flex-col gap-2">
-                    <button 
-                      onClick={async () => {
-                        const pending = await LocalNotifications.getPending();
-                        if (pending.notifications.length === 0) {
-                          alert("No notifications are currently scheduled.");
-                        } else {
-                          const list = pending.notifications.map(n => {
-                            const schedule = n.schedule as any;
-                            if (schedule?.on) {
-                              const days = ['?', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                              return `${n.title} (${days[schedule.on.weekday]} at ${schedule.on.hour}:${schedule.on.minute.toString().padStart(2, '0')})`;
+                  {isEditingProfile ? (
+                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-xs space-y-4">
+                      <div className="bg-white p-4 rounded-2xl border-2 border-indigo-100 shadow-sm space-y-1 text-left">
+                        <label className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">Your Name</label>
+                        <input 
+                          type="text"
+                          value={userName}
+                          onChange={(e) => setUserName(e.target.value)}
+                          className="w-full bg-transparent font-black text-slate-700 focus:outline-none text-lg"
+                          placeholder="Enter your name"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => setIsEditingProfile(false)}
+                          className="flex-1 bg-emerald-500 text-white font-black py-3 rounded-2xl shadow-lg shadow-emerald-100 active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          Save
+                        </button>
+                        <button 
+                          onClick={() => setIsEditingProfile(false)}
+                          className="flex-1 bg-slate-100 text-slate-500 font-black py-3 rounded-2xl active:scale-95 transition-all uppercase tracking-widest text-xs"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </motion.div>
+                  ) : (
+                    <div className="w-full max-w-xs space-y-6">
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                        <h3 className="font-black text-2xl bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">{userName || 'Planova Kidz'}</h3>
+                        <p className="text-slate-400 font-bold tracking-widest text-xs uppercase mt-1">v1.0.0</p>
+                      </motion.div>
+
+                      {/* Notification Settings in Me Tab */}
+                      <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-4">
+                        <div className="flex items-center justify-center gap-2 text-slate-600">
+                          <Bell className="w-4 h-4" />
+                          <p className="text-[10px] font-black uppercase tracking-widest">Notifications</p>
+                        </div>
+                        <div className="space-y-2">
+                          {notificationStatus !== 'granted' && (
+                            <button 
+                              type="button"
+                              onClick={requestNotificationPermission}
+                              className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all"
+                            >
+                              {notificationStatus === 'denied' ? 'Fix in Settings' : 'Enable Notifications'}
+                            </button>
+                          )}
+                          <button 
+                            type="button"
+                            onClick={testNotification}
+                            className="w-full bg-slate-50 text-slate-600 py-3 rounded-2xl font-black text-xs uppercase tracking-widest border border-slate-100 active:scale-95 transition-all"
+                          >
+                            Test Notification
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-medium leading-tight">
+                          {notificationStatus === 'granted' 
+                            ? "Reminders are active! You'll get alerts for your classes and activities." 
+                            : notificationStatus === 'denied'
+                            ? "⚠️ Notifications are BLOCKED. Please go to iPhone Settings > Planova Kidz > Notifications and turn on 'Allow Notifications' to get reminders!"
+                            : "Reminders are off. Enable them to stay on track with your schedule!"}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <button 
+                          onClick={async () => {
+                            const pending = await LocalNotifications.getPending();
+                            if (pending.notifications.length === 0) {
+                              alert("No notifications are currently scheduled.");
+                            } else {
+                              const list = pending.notifications.map(n => {
+                                const schedule = n.schedule as any;
+                                if (schedule?.on) {
+                                  const days = ['?', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                                  return `${n.title} (${days[schedule.on.weekday]} at ${schedule.on.hour}:${schedule.on.minute.toString().padStart(2, '0')})`;
+                                }
+                                return `${n.title} (One-time)`;
+                              }).join('\n');
+                              alert(`Scheduled Notifications (${pending.notifications.length}):\n\n${list}`);
                             }
-                            return `${n.title} (One-time)`;
-                          }).join('\n');
-                          alert(`Scheduled Notifications (${pending.notifications.length}):\n\n${list}`);
-                        }
-                      }}
-                      className="text-indigo-500 font-bold text-xs uppercase tracking-widest mb-2"
-                    >
-                      Check Scheduled Reminders
-                    </button>
-                    <button 
-                      onClick={() => {
-                        const mergedClasses = fixedClasses.reduce((acc: FixedClass[], current: FixedClass) => {
-                          const currentName = current.name.trim().toLowerCase();
-                          const currentTime = current.startTime;
-                          
-                          const existing = acc.find(item => 
-                            item.name.trim().toLowerCase() === currentName && 
-                            item.startTime === currentTime
-                          );
-                          
-                          if (existing) {
-                            const allDays = Array.from(new Set([...existing.days, ...current.days]));
-                            existing.days = allDays as DayOfWeek[];
-                            existing.reminder = existing.reminder || current.reminder;
-                            return acc;
-                          }
-                          return acc.concat([{...current}]);
-                        }, []);
-                        setFixedClasses(mergedClasses);
-                        alert('All duplicates merged! Your schedule is now clean. ✨');
-                      }}
-                      className="text-indigo-500 font-bold text-xs uppercase tracking-widest"
-                    >
-                      Cleanup Duplicates
-                    </button>
-                    <button 
-                      onClick={() => {
-                        if(confirm('Reset all data?')) {
-                          localStorage.clear();
-                          window.location.reload();
-                        }
-                      }}
-                      className="text-rose-500 font-bold text-xs uppercase tracking-widest pt-2"
-                    >
-                      Reset App Data
-                    </button>
-                  </div>
+                          }}
+                          className="text-indigo-500 font-bold text-xs uppercase tracking-widest mb-2"
+                        >
+                          Check Scheduled Reminders
+                        </button>
+                        <button 
+                          onClick={() => {
+                            const mergedClasses = fixedClasses.reduce((acc: FixedClass[], current: FixedClass) => {
+                              const currentName = current.name.trim().toLowerCase();
+                              const currentTime = current.startTime;
+                              
+                              const existing = acc.find(item => 
+                                item.name.trim().toLowerCase() === currentName && 
+                                item.startTime === currentTime
+                              );
+                              
+                              if (existing) {
+                                const allDays = Array.from(new Set([...existing.days, ...current.days]));
+                                existing.days = allDays as DayOfWeek[];
+                                existing.reminder = existing.reminder || current.reminder;
+                                return acc;
+                              }
+                              return acc.concat([{...current}]);
+                            }, []);
+                            setFixedClasses(mergedClasses);
+                            alert('All duplicates merged! Your schedule is now clean. ✨');
+                          }}
+                          className="text-indigo-500 font-bold text-xs uppercase tracking-widest"
+                        >
+                          Cleanup Duplicates
+                        </button>
+                        <button 
+                          onClick={() => {
+                            if(confirm('Reset all data?')) {
+                              localStorage.clear();
+                              window.location.reload();
+                            }
+                          }}
+                          className="text-rose-500 font-bold text-xs uppercase tracking-widest pt-2"
+                        >
+                          Reset App Data
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
           )}
         </AnimatePresence>
       </main>
@@ -2177,7 +2246,10 @@ export default function App() {
         ].map((item) => (
           <button
             key={item.id}
-            onClick={() => setActiveTab(item.id)}
+            onClick={() => {
+              setActiveTab(item.id);
+              setShowPrivacy(false);
+            }}
             className={`flex flex-col items-center gap-1 transition-all relative ${
               activeTab === item.id ? item.color : 'text-slate-400 hover:text-slate-600'
             }`}
