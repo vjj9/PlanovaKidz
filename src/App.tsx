@@ -134,26 +134,27 @@ const ActivityTimer = ({ durationStr, theme, title }: { durationStr: string, the
               {timerDisplay.mins}
             </span>
             <span className="text-sm font-bold text-indigo-400">:{timerDisplay.secs}</span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase ml-2 tracking-normal">mins remaining</span>
+            <span className="text-[10px] font-bold text-indigo-400 uppercase ml-2 tracking-normal">MINS</span>
           </div>
         </div>
         <button 
           onClick={() => setIsActive(!isActive)} 
-          className={`text-[10px] font-bold px-3 py-1.5 rounded-full transition-colors ${
+          className={`text-xs font-black px-4 py-2 rounded-2xl transition-all shadow-sm active:scale-95 ${
             isActive 
-              ? 'bg-amber-100 text-amber-700' 
+              ? 'bg-amber-100 text-amber-700 shadow-inner' 
               : timeLeft === 0 
                 ? 'bg-emerald-100 text-emerald-700'
                 : theme ? `${theme.button} ${theme.buttonHover}` : 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
           }`}
         >
-          {timeLeft === 0 ? 'Done!' : isActive ? 'Pause' : 'Start'}
+          {timeLeft === 0 ? 'COMPLETED! ✨' : isActive ? 'PAUSE' : 'START TIMER'}
         </button>
       </div>
-      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-        <div 
+      <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+        <motion.div 
+          initial={false}
+          animate={{ width: `${progress}%` }}
           className={`h-full transition-all duration-1000 ${timeLeft === 0 ? 'bg-emerald-500' : theme ? theme.bg : 'bg-indigo-500'}`} 
-          style={{ width: `${progress}%` }} 
         />
       </div>
     </div>
@@ -744,8 +745,8 @@ export default function App() {
         
         PLANNING RULES:
         1. STRICT REQUIREMENT: ONLY use activities provided above. DO NOT invent tasks like "Homework" or "Clean Room".
-        2. ENTIRE WINDOW: You MUST schedule the entire time from ${format12h(settings.schoolDayStartTime)} to Bedtime (${format12h(settings.bedtime)}) on school days.
-        3. START TIME: The first activity on a school day MUST start exactly at ${format12h(settings.schoolDayStartTime)}.
+        2. ENTIRE WINDOW: You MUST schedule the ENTIRE time from ${format12h(settings.schoolDayStartTime)} to Bedtime (${format12h(settings.bedtime)}) on school days. NO GAPS.
+        3. START TIME: The first activity on a school day MUST start exactly at ${format12h(settings.schoolDayStartTime)}. NO EXCEPTIONS.
         4. DURATION CALC: On school days, the total available duration to fill is exactly ${
           (parseFloat(settings.bedtime.split(':')[0]) + parseFloat(settings.bedtime.split(':')[1])/60) - 
           (parseFloat(settings.schoolDayStartTime.split(':')[0]) + parseFloat(settings.schoolDayStartTime.split(':')[1])/60)
@@ -762,9 +763,9 @@ export default function App() {
           "days": [{
             "day": "Sunday", 
             "slots": [{
-              "time": "4:00 PM", // Omit if isFlexible is true
+              "time": "4:00 PM", // Omit if isFlexible is true. MUST follow 12h format: H:MM AM/PM.
               "activity": "Name", 
-              "duration": "1h", 
+              "duration": "1h", // MUST be format "Xh", "Xm", or "Xh Xm"
               "type": "Class | Chore | Goal | FreeTime", 
               "isFlexible": false, 
               "reminder": boolean
@@ -1226,7 +1227,7 @@ export default function App() {
 
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 pb-12">
-        <header className="space-y-1">
+        <header className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className={`w-12 h-12 ${theme.bg} rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100`}>
@@ -1245,8 +1246,33 @@ export default function App() {
               <Pencil className="w-4 h-4" />
             </button>
           </div>
-          <p className="text-slate-500 font-medium">It's {today}. Here's your full day plan.</p>
+          <p className="text-slate-500 font-medium">It's {today}. Ready for a great day?</p>
         </header>
+
+        {/* AI Consent Banner if missing */}
+        {!hasAcceptedAiConsent && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-indigo-600 p-5 rounded-[28px] shadow-xl shadow-indigo-100 space-y-4"
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5 text-white" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-black text-white text-sm">Enable AI Smart Planning</h3>
+                <p className="text-indigo-100 text-[11px] leading-relaxed font-medium">We need your permission to securely use AI to build your magical weekly schedule.</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setShowAiConsentModal(true)}
+              className="w-full bg-white text-indigo-600 py-3 rounded-2xl font-black text-xs uppercase tracking-widest active:scale-95 transition-all shadow-sm"
+            >
+              Review & Enable AI
+            </button>
+          </motion.div>
+        )}
 
         {/* Magic Story Section */}
         <section className="bg-gradient-to-br from-indigo-50 to-violet-50 p-6 rounded-3xl border border-indigo-100 shadow-sm space-y-4">
@@ -2398,6 +2424,165 @@ export default function App() {
     );
   };
 
+  const renderProfile = () => (
+    <div className="flex flex-col items-center justify-center py-12 text-center space-y-6">
+      <div className="w-24 h-24 bg-gradient-to-br from-indigo-100 via-violet-100 to-emerald-100 rounded-full flex items-center justify-center shadow-inner">
+        <User className="w-12 h-12 text-violet-600" />
+      </div>
+
+      {!isEditingProfile && (
+        <div className="flex gap-2">
+          <button 
+            type="button"
+            onClick={() => setIsEditingProfile(true)}
+            className="flex items-center gap-2 bg-violet-50 text-violet-600 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-violet-100 transition-all active:scale-95 shadow-sm border border-violet-100"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            Edit Profile
+          </button>
+          <button 
+            type="button"
+            onClick={() => setShowPrivacy(true)}
+            className="flex items-center gap-2 bg-slate-100 text-slate-500 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95 shadow-sm border border-slate-200"
+          >
+            Privacy & Disclosure
+          </button>
+        </div>
+      )}
+
+      {isEditingProfile ? (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-xs space-y-4">
+          <div className="bg-white p-4 rounded-2xl border-2 border-indigo-100 shadow-sm space-y-1 text-left">
+            <label className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">Your Name</label>
+            <input 
+              type="text"
+              value={userName}
+              onChange={(e) => setUserName(e.target.value)}
+              className="w-full bg-transparent font-black text-slate-700 focus:outline-none text-lg"
+              placeholder="Enter your name"
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setIsEditingProfile(false)}
+              className="flex-1 bg-emerald-500 text-white font-black py-3 rounded-2xl shadow-lg shadow-emerald-100 active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Save
+            </button>
+            <button 
+              onClick={() => setIsEditingProfile(false)}
+              className="flex-1 bg-slate-100 text-slate-500 font-black py-3 rounded-2xl active:scale-95 transition-all uppercase tracking-widest text-xs"
+            >
+              Cancel
+            </button>
+          </div>
+        </motion.div>
+      ) : (
+        <div className="w-full max-w-xs space-y-6">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <h3 className="font-black text-2xl bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">{userName || 'Planova Kidz'}</h3>
+            <p className="text-slate-400 font-bold tracking-widest text-xs uppercase mt-1">v1.2.0 • ACTIVE SESSION</p>
+          </motion.div>
+
+          {/* AI Consent Toggle directly in Me Tab */}
+          <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${hasAcceptedAiConsent ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-400'}`}>
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <h4 className="font-black text-slate-900 text-sm">AI Smart Planning</h4>
+                  <p className={`text-[10px] font-black uppercase tracking-widest ${hasAcceptedAiConsent ? 'text-emerald-500' : 'text-slate-400'}`}>
+                    {hasAcceptedAiConsent ? 'Enabled ✨' : 'Disabled'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  const newVal = !hasAcceptedAiConsent;
+                  setHasAcceptedAiConsent(newVal);
+                  localStorage.setItem('ai_consent_accepted', newVal ? 'true' : 'false');
+                }}
+                className={`w-12 h-7 rounded-full transition-all relative ${hasAcceptedAiConsent ? 'bg-indigo-600' : 'bg-slate-200'}`}
+              >
+                <motion.div 
+                  animate={{ x: hasAcceptedAiConsent ? 20 : 0 }}
+                  className="absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-sm" 
+                />
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium leading-relaxed text-left">
+              Required for automated weekly scheduling and story generation. We never share your real name with external AI services.
+            </p>
+          </div>
+
+          <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-4">
+            <div className="flex items-center justify-center gap-2 text-slate-600">
+              <Bell className="w-4 h-4" />
+              <p className="text-[10px] font-black uppercase tracking-widest">Notifications</p>
+            </div>
+            <div className="space-y-2">
+              {notificationStatus !== 'granted' && (
+                <button 
+                  type="button"
+                  onClick={requestNotificationPermission}
+                  className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all"
+                >
+                  {notificationStatus === 'denied' ? 'Fix in Settings' : 'Enable Notifications'}
+                </button>
+              )}
+              <button 
+                type="button"
+                onClick={testNotification}
+                className="w-full bg-slate-50 text-slate-600 py-3 rounded-2xl font-black text-xs uppercase tracking-widest border border-slate-100 active:scale-95 transition-all"
+              >
+                Test Notification
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <button 
+              onClick={async () => {
+                const pending = await LocalNotifications.getPending();
+                if (pending.notifications.length === 0) {
+                  alert("No notifications are currently scheduled.");
+                } else {
+                  const list = pending.notifications.map(n => {
+                    const schedule = n.schedule as any;
+                    if (schedule?.on) {
+                      const days = ['?', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                      return `${n.title} (${days[schedule.on.weekday]} at ${schedule.on.hour}:${schedule.on.minute.toString().padStart(2, '0')})`;
+                    }
+                    return `${n.title} (One-time)`;
+                  }).join('\n');
+                  alert(`Scheduled Notifications (${pending.notifications.length}):\n\n${list}`);
+                }
+              }}
+              className="text-indigo-500 font-bold text-xs uppercase tracking-widest"
+            >
+              Check Scheduled Reminders
+            </button>
+            <button 
+              onClick={() => {
+                if(confirm('Reset all data?')) {
+                  localStorage.clear();
+                  window.location.reload();
+                }
+              }}
+              className="text-rose-500 font-bold text-xs uppercase tracking-widest pt-2"
+            >
+              Reset App Data
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   if (!hasStarted) {
     return (
       <div className="min-h-screen bg-white flex flex-col items-center justify-center p-8 text-center bg-gradient-to-b from-white to-indigo-50">
@@ -2508,182 +2693,7 @@ export default function App() {
               {activeTab === 'schedule' && renderSchedule()}
               {activeTab === 'setup' && renderSetup()}
               {activeTab === 'plan' && renderPlan()}
-              {activeTab === 'profile' && (
-                <div className="flex flex-col items-center justify-center py-12 text-center space-y-6">
-                  <div className="w-24 h-24 bg-gradient-to-br from-indigo-100 via-violet-100 to-emerald-100 rounded-full flex items-center justify-center shadow-inner">
-                    <User className="w-12 h-12 text-violet-600" />
-                  </div>
-
-                  {!isEditingProfile && (
-                    <div className="flex gap-2">
-                      <button 
-                        type="button"
-                        onClick={() => setIsEditingProfile(true)}
-                        className="flex items-center gap-2 bg-violet-50 text-violet-600 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-violet-100 transition-all active:scale-95 shadow-sm border border-violet-100"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        Edit Profile
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={() => setShowPrivacy(true)}
-                        className="flex items-center gap-2 bg-slate-100 text-slate-500 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all active:scale-95 shadow-sm border border-slate-200"
-                      >
-                        Privacy
-                      </button>
-                    </div>
-                  )}
-
-                  {isEditingProfile ? (
-                    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-xs space-y-4">
-                      <div className="bg-white p-4 rounded-2xl border-2 border-indigo-100 shadow-sm space-y-1 text-left">
-                        <label className="text-[10px] font-black text-indigo-400 uppercase tracking-wider">Your Name</label>
-                        <input 
-                          type="text"
-                          value={userName}
-                          onChange={(e) => setUserName(e.target.value)}
-                          className="w-full bg-transparent font-black text-slate-700 focus:outline-none text-lg"
-                          placeholder="Enter your name"
-                          autoFocus
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button 
-                          onClick={() => setIsEditingProfile(false)}
-                          className="flex-1 bg-emerald-500 text-white font-black py-3 rounded-2xl shadow-lg shadow-emerald-100 active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                          Save
-                        </button>
-                        <button 
-                          onClick={() => setIsEditingProfile(false)}
-                          className="flex-1 bg-slate-100 text-slate-500 font-black py-3 rounded-2xl active:scale-95 transition-all uppercase tracking-widest text-xs"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <div className="w-full max-w-xs space-y-6">
-                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                        <h3 className="font-black text-2xl bg-gradient-to-r from-indigo-600 to-emerald-600 bg-clip-text text-transparent">{userName || 'Planova Kidz'}</h3>
-                        <p className="text-slate-400 font-bold tracking-widest text-xs uppercase mt-1">v1.0.0</p>
-                      </motion.div>
-
-                      {/* Notification Settings in Me Tab */}
-                      <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-4">
-                        <div className="flex items-center justify-center gap-2 text-slate-600">
-                          <Bell className="w-4 h-4" />
-                          <p className="text-[10px] font-black uppercase tracking-widest">Notifications</p>
-                        </div>
-                        <div className="space-y-2">
-                          {notificationStatus !== 'granted' && (
-                            <button 
-                              type="button"
-                              onClick={requestNotificationPermission}
-                              className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-indigo-100 active:scale-95 transition-all"
-                            >
-                              {notificationStatus === 'denied' ? 'Fix in Settings' : 'Enable Notifications'}
-                            </button>
-                          )}
-                          <button 
-                            type="button"
-                            onClick={testNotification}
-                            className="w-full bg-slate-50 text-slate-600 py-3 rounded-2xl font-black text-xs uppercase tracking-widest border border-slate-100 active:scale-95 transition-all"
-                          >
-                            Test Notification
-                          </button>
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-medium leading-tight">
-                          {notificationStatus === 'granted' 
-                            ? "Reminders are active! You'll get alerts for your classes and activities." 
-                            : notificationStatus === 'denied'
-                            ? "⚠️ Notifications are BLOCKED. Please go to iPhone Settings > Planova Kidz > Notifications and turn on 'Allow Notifications' to get reminders!"
-                            : "Reminders are off. Enable them to stay on track with your schedule!"}
-                        </p>
-                      </div>
-
-                      <div className="flex flex-col gap-2">
-                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Globe className="w-4 h-4 text-indigo-500" />
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">AI Consent</span>
-                          </div>
-                          <button 
-                            onClick={() => {
-                              const newVal = !hasAcceptedAiConsent;
-                              setHasAcceptedAiConsent(newVal);
-                              localStorage.setItem('ai_consent_accepted', newVal ? 'true' : 'false');
-                            }}
-                            className={`w-10 h-6 rounded-full transition-all relative ${hasAcceptedAiConsent ? 'bg-indigo-500' : 'bg-slate-300'}`}
-                          >
-                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${hasAcceptedAiConsent ? 'right-1' : 'left-1'}`} />
-                          </button>
-                        </div>
-
-                        <button 
-                          onClick={async () => {
-                            const pending = await LocalNotifications.getPending();
-                            if (pending.notifications.length === 0) {
-                              alert("No notifications are currently scheduled.");
-                            } else {
-                              const list = pending.notifications.map(n => {
-                                const schedule = n.schedule as any;
-                                if (schedule?.on) {
-                                  const days = ['?', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                                  return `${n.title} (${days[schedule.on.weekday]} at ${schedule.on.hour}:${schedule.on.minute.toString().padStart(2, '0')})`;
-                                }
-                                return `${n.title} (One-time)`;
-                              }).join('\n');
-                              alert(`Scheduled Notifications (${pending.notifications.length}):\n\n${list}`);
-                            }
-                          }}
-                          className="text-indigo-500 font-bold text-xs uppercase tracking-widest mb-2"
-                        >
-                          Check Scheduled Reminders
-                        </button>
-                        <button 
-                          onClick={() => {
-                            const mergedClasses = fixedClasses.reduce((acc: FixedClass[], current: FixedClass) => {
-                              const currentName = current.name.trim().toLowerCase();
-                              const currentTime = current.startTime;
-                              
-                              const existing = acc.find(item => 
-                                item.name.trim().toLowerCase() === currentName && 
-                                item.startTime === currentTime
-                              );
-                              
-                              if (existing) {
-                                const allDays = Array.from(new Set([...existing.days, ...current.days]));
-                                existing.days = allDays as DayOfWeek[];
-                                existing.reminder = existing.reminder || current.reminder;
-                                return acc;
-                              }
-                              return acc.concat([{...current}]);
-                            }, []);
-                            setFixedClasses(mergedClasses);
-                            alert('All duplicates merged! Your schedule is now clean. ✨');
-                          }}
-                          className="text-indigo-500 font-bold text-xs uppercase tracking-widest"
-                        >
-                          Cleanup Duplicates
-                        </button>
-                        <button 
-                          onClick={() => {
-                            if(confirm('Reset all data?')) {
-                              localStorage.clear();
-                              window.location.reload();
-                            }
-                          }}
-                          className="text-rose-500 font-bold text-xs uppercase tracking-widest pt-2"
-                        >
-                          Reset App Data
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+              {activeTab === 'profile' && renderProfile()}
             </>
           )}
         </AnimatePresence>
