@@ -26,7 +26,10 @@ import {
   Dumbbell,
   ClipboardList,
   Pencil,
-  Wand2
+  Wand2,
+  LayoutGrid,
+  Zap,
+  Globe
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Type, ThinkingLevel, Modality } from "@google/genai";
@@ -87,8 +90,14 @@ const ActivityTimer = ({ durationStr, theme, title }: { durationStr: string, the
   useEffect(() => {
     let secs = 0;
     if (!durationStr) return;
-    if (durationStr.includes('h')) secs = parseInt(durationStr) * 3600;
-    else if (durationStr.includes('m')) secs = parseInt(durationStr) * 60;
+    
+    // Support formats like "4.5h", "4h 30m", "30m", "4h"
+    const hMatch = durationStr.match(/(\d+(\.\d+)?)h/);
+    const mMatch = durationStr.match(/(\d+(\.\d+)?)m/);
+    
+    if (hMatch) secs += parseFloat(hMatch[1]) * 3600;
+    if (mMatch) secs += parseFloat(mMatch[1]) * 60;
+    
     setTotalTime(secs);
     setTimeLeft(secs);
   }, [durationStr]);
@@ -104,8 +113,14 @@ const ActivityTimer = ({ durationStr, theme, title }: { durationStr: string, the
   }, [isActive, timeLeft]);
 
   const progress = totalTime > 0 ? ((totalTime - timeLeft) / totalTime) * 100 : 0;
-  const mins = Math.floor(timeLeft / 60);
-  const secs = timeLeft % 60;
+  
+  const formatTime = (totalSeconds: number) => {
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return { mins: m, secs: s.toString().padStart(2, '0') };
+  };
+
+  const timerDisplay = formatTime(timeLeft);
 
   return (
     <div className="w-full mt-4 pt-4 border-t border-slate-50">
@@ -114,11 +129,12 @@ const ActivityTimer = ({ durationStr, theme, title }: { durationStr: string, the
           <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-0.5">
             {title || 'Timer'}
           </span>
-          <div className="flex items-baseline gap-1">
-            <span className="text-xl font-black text-indigo-600 font-mono leading-none">
-              {mins}:{secs.toString().padStart(2, '0')}
+          <div className="flex items-baseline font-mono tracking-tighter">
+            <span className="text-2xl font-black text-indigo-600 leading-none">
+              {timerDisplay.mins}
             </span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Remaining</span>
+            <span className="text-sm font-bold text-indigo-400">:{timerDisplay.secs}</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase ml-2 tracking-normal">mins remaining</span>
           </div>
         </div>
         <button 
@@ -170,17 +186,14 @@ export default function App() {
   const [storyText, setStoryText] = useState<string | null>(null);
   const [isStoryPlaying, setIsStoryPlaying] = useState(false);
   const [apiKeyMissing, setApiKeyMissing] = useState(false);
+  const [hasAcceptedAiConsent, setHasAcceptedAiConsent] = useState(false);
+  const [showAiConsentModal, setShowAiConsentModal] = useState(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   useEffect(() => {
-    console.log("Planova Kidz: App initialized");
-    console.log("Planova Kidz: Platform:", (window as any).Capacitor?.getPlatform() || 'web');
     if (!process.env.GEMINI_API_KEY) {
-      console.warn("Planova Kidz: GEMINI_API_KEY is missing in this build!");
       setApiKeyMissing(true);
-    } else {
-      console.log("Planova Kidz: GEMINI_API_KEY is present.");
     }
   }, []);
 
@@ -276,6 +289,7 @@ export default function App() {
   const [editingFreeTimeId, setEditingFreeTimeId] = useState<string | null>(null);
 
   const [notificationStatus, setNotificationStatus] = useState<'granted' | 'denied' | 'prompt'>('prompt');
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Load data from localStorage on mount
   useEffect(() => {
@@ -360,7 +374,35 @@ export default function App() {
         bedtime: parsed.bedtime || '20:30'
       });
     }
-    if (savedPlan) setPlan(JSON.parse(savedPlan));
+    if (savedPlan) {
+      const parsedPlan = JSON.parse(savedPlan);
+      // Clean up any hallucinated tasks from stored plan
+      const savedSettingsLocal = localStorage.getItem('kids_settings');
+      const savedClassesLocal = localStorage.getItem('kids_fixed_classes');
+      const savedPracticeLocal = localStorage.getItem('kids_practice_goals');
+      const savedChoresLocal = localStorage.getItem('kids_chores');
+      const savedFreeTimesLocal = localStorage.getItem('kids_free_times');
+
+      if (parsedPlan.days) {
+        const allowed = new Set(["free time ✨"]);
+        if (savedClassesLocal) JSON.parse(savedClassesLocal).forEach((c: any) => allowed.add(c.name.toLowerCase()));
+        if (savedPracticeLocal) JSON.parse(savedPracticeLocal).forEach((p: any) => allowed.add(p.name.toLowerCase()));
+        if (savedChoresLocal) JSON.parse(savedChoresLocal).forEach((c: any) => allowed.add(c.name.toLowerCase()));
+        if (savedFreeTimesLocal) JSON.parse(savedFreeTimesLocal).forEach((f: any) => allowed.add(f.name.toLowerCase()));
+
+        parsedPlan.days = parsedPlan.days.map((day: any) => ({
+          ...day,
+          slots: day.slots.filter((slot: any) => {
+            const name = slot.activity.toLowerCase();
+            return allowed.has(name) || name.includes("free time");
+          })
+        }));
+      }
+      setPlan(parsedPlan);
+    }
+
+    const consent = localStorage.getItem('ai_consent_accepted');
+    if (consent === 'true') setHasAcceptedAiConsent(true);
   }, []);
 
   // Save data to localStorage when it changes
@@ -380,10 +422,8 @@ export default function App() {
   }, [userName, fixedClasses, practiceGoals, chores, settings, plan]);
 
   const requestNotificationPermission = async () => {
-    console.log('Planova Kidz: Requesting notification permissions...');
     try {
       const status = await NotificationService.requestPermissions();
-      console.log('Planova Kidz: Permission result:', status);
       setNotificationStatus(status);
       
       if (status === 'granted') {
@@ -393,13 +433,11 @@ export default function App() {
         alert('Notification permission is denied. Please go to your iPhone Settings > Planova Kidz > Notifications and turn them on manually.');
       }
     } catch (error) {
-      console.error('Planova Kidz: Error requesting permissions:', error);
       alert('Something went wrong while requesting permissions. Please check your phone settings.');
     }
   };
 
   const testNotification = async () => {
-    console.log('Planova Kidz: Running test notification...');
     if (notificationStatus !== 'granted') {
       const status = await NotificationService.requestPermissions();
       setNotificationStatus(status);
@@ -422,14 +460,18 @@ export default function App() {
 
   const handleAddClass = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Planova Kidz: Attempting to save class...', { newClassName, newClassDays, newClassTime, newClassReminder });
+    setFormError(null);
 
     if (!newClassName || newClassName.trim() === '') {
-      alert("Please enter a class name! 🎹");
+      setFormError("Please enter a class name! 🎹");
       return;
     }
     if (newClassDays.length === 0) {
-      alert("Please select at least one day for the class! 📅");
+      setFormError("Please select at least one day for the class! 📅");
+      return;
+    }
+    if (!newClassTime) {
+      setFormError("Please select a start time for the class! ⏰");
       return;
     }
     
@@ -507,7 +549,11 @@ export default function App() {
 
   const handleAddPractice = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPracticeName) return;
+    setFormError(null);
+    if (!newPracticeName || newPracticeName.trim() === '') {
+      setFormError("Please enter a practice goal! ⚽");
+      return;
+    }
     
     if (editingPracticeId) {
       setPracticeGoals(practiceGoals.map(p => p.id === editingPracticeId ? {
@@ -519,7 +565,7 @@ export default function App() {
       setEditingPracticeId(null);
     } else {
       if (practiceGoals.some(p => p.name.toLowerCase() === newPracticeName.toLowerCase())) {
-        alert("This practice goal already exists!");
+        setFormError("This practice goal already exists!");
         return;
       }
       setPracticeGoals([...practiceGoals, {
@@ -536,7 +582,11 @@ export default function App() {
 
   const handleAddChore = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newChoreName) return;
+    setFormError(null);
+    if (!newChoreName || newChoreName.trim() === '') {
+      setFormError("Please enter a chore name! 🧹");
+      return;
+    }
     
     if (editingChoreId) {
       setChores(chores.map(c => c.id === editingChoreId ? {
@@ -548,7 +598,7 @@ export default function App() {
       setEditingChoreId(null);
     } else {
       if (chores.some(c => c.name.toLowerCase() === newChoreName.toLowerCase())) {
-        alert("This chore already exists!");
+        setFormError("This chore already exists!");
         return;
       }
       setChores([...chores, {
@@ -569,7 +619,10 @@ export default function App() {
     setNewClassDays(c.days);
     setNewClassTime(c.startTime);
     setNewClassDuration(c.duration);
+    setNewClassTime(c.startTime);
+    setNewClassDuration(c.duration);
     setNewClassReminder(c.reminder);
+    setFormError(null);
     setShowAddClass(true);
   };
 
@@ -578,6 +631,7 @@ export default function App() {
     setNewPracticeName(p.name);
     setNewPracticeDuration(p.duration);
     setNewPracticeFrequency(p.frequency);
+    setFormError(null);
     setShowAddPractice(true);
   };
 
@@ -586,12 +640,25 @@ export default function App() {
     setNewChoreName(c.name);
     setNewChoreDuration(c.duration);
     setNewChoreFrequency(c.frequency);
+    setFormError(null);
     setShowAddChore(true);
   };
 
   const handleAddFreeTime = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFreeTimeName || newFreeTimeDays.length === 0) return;
+    setFormError(null);
+    if (!newFreeTimeName || newFreeTimeName.trim() === '') {
+      setFormError("Please enter a name for your free time! 🎮");
+      return;
+    }
+    if (newFreeTimeDays.length === 0) {
+      setFormError("Please select at least one day! 📅");
+      return;
+    }
+    if (!newFreeTimeTime) {
+      setFormError("Please select a start time! ⏰");
+      return;
+    }
     
     if (editingFreeTimeId) {
       setFreeTimes(freeTimes.map(f => f.id === editingFreeTimeId ? {
@@ -609,9 +676,9 @@ export default function App() {
         f.startTime === newFreeTimeTime &&
         JSON.stringify([...f.days].sort()) === JSON.stringify([...newFreeTimeDays].sort())
       );
-
+ 
       if (isDuplicate) {
-        alert("This free time activity already exists for these days!");
+        setFormError("This free time activity already exists for these days!");
         return;
       }
 
@@ -646,9 +713,12 @@ export default function App() {
   };
 
   const generatePlan = async () => {
+    if (!hasAcceptedAiConsent) {
+      setShowAiConsentModal(true);
+      return;
+    }
     setIsGenerating(true);
     setActiveTab('plan');
-    console.log("Planova Kidz: Generating plan with inputs:", { fixedClasses, settings, practiceGoals, chores, freeTimes });
     try {
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
@@ -658,27 +728,49 @@ export default function App() {
 
       const ai = new GoogleGenAI({ apiKey });
       const prompt = `
-        Create a concise weekly schedule for the child.
+        Create a weekly schedule for a child.
         
         INPUTS:
         - Bedtime: ${format12h(settings.bedtime)}
         - School Days: ${settings.schoolDays.join(', ')}
-        - CLASSES: ${fixedClasses.map(c => `${c.name} on ${c.days.join(', ')} at ${format12h(c.startTime)} (${c.duration}) [Reminder: ${c.reminder ? 'Yes' : 'No'}]`).join('; ')}
-        - FREE TIME: ${freeTimes.map(f => `${f.name} on ${f.days.join(', ')} at ${format12h(f.startTime)} (${f.duration})`).join('; ')}
-        - GOALS: ${practiceGoals.map(p => `${p.name} (${p.duration}, ${p.frequency})`).join('; ')}
-        - CHORES: ${chores.map(c => `${c.name} (${c.duration}, ${c.frequency})`).join('; ')}
+        - Start time (after school) on school days: ${format12h(settings.schoolDayStartTime)}
+        - Weekend MAX duration for GOALS and CHORES combined: ${settings.weekendAvailableHours} hours per day.
         
-        RULES:
-        1. Start Sunday, end Saturday.
-        2. Include ALL CLASSES and FREE TIME at their specific times.
-        3. Fit GOALS and CHORES into remaining time before ${format12h(settings.bedtime)}.
-        4. Fill gaps with "Nothing For Today !". Group consecutive gaps into one block.
-        5. Return ONLY valid JSON.
+        ACTIVITIES TO SCHEDULE:
+        - CLASSES (Fixed Time): ${fixedClasses.map(c => `${c.name} on ${c.days.join(', ')} at ${format12h(c.startTime)} (${c.duration})`).join('; ')}
+        - FIXED FREE TIME (Scheduled): ${freeTimes.map(f => `${f.name} on ${f.days.join(', ')} at ${format12h(f.startTime)} (${f.duration})`).join('; ')}
+        - GOALS (to fit in): ${practiceGoals.map(p => `${p.name} (${p.duration}, ${p.frequency})`).join('; ')}
+        - CHORES (to fit in): ${chores.map(c => `${c.name} (${c.duration}, ${c.frequency})`).join('; ')}
+        
+        PLANNING RULES:
+        1. STRICT REQUIREMENT: ONLY use activities provided above. DO NOT invent tasks like "Homework" or "Clean Room".
+        2. ENTIRE WINDOW: You MUST schedule the entire time from ${format12h(settings.schoolDayStartTime)} to Bedtime (${format12h(settings.bedtime)}) on school days.
+        3. START TIME: The first activity on a school day MUST start exactly at ${format12h(settings.schoolDayStartTime)}.
+        4. DURATION CALC: On school days, the total available duration to fill is exactly ${
+          (parseFloat(settings.bedtime.split(':')[0]) + parseFloat(settings.bedtime.split(':')[1])/60) - 
+          (parseFloat(settings.schoolDayStartTime.split(':')[0]) + parseFloat(settings.schoolDayStartTime.split(':')[1])/60)
+        } hours. Your activity durations in a day MUST sum to this total.
+        5. On Weekends: 
+           - List CLASSES and FIXED FREE TIME at their specific times.
+           - GOALS and CHORES combined MUST NOT exceed ${settings.weekendAvailableHours} hours total per day.
+           - Mark these weekend GOALS/CHORES as "isFlexible": true and leave out "time".
+        6. NO GAPS: Use "Free Time ✨" (Timed) to fill ALL gaps. The day MUST be a continuous block from ${format12h(settings.schoolDayStartTime)} to Bedtime.
+        7. Return ONLY valid JSON.
         
         JSON Schema:
         {
-          "days": [{"day": "Sunday", "slots": [{"time": "4:00 PM", "activity": "Name", "duration": "1h", "type": "Class | Other", "reminder": true}]}],
-          "tips": ["One short helpful tip"]
+          "days": [{
+            "day": "Sunday", 
+            "slots": [{
+              "time": "4:00 PM", // Omit if isFlexible is true
+              "activity": "Name", 
+              "duration": "1h", 
+              "type": "Class | Chore | Goal | FreeTime", 
+              "isFlexible": false, 
+              "reminder": boolean
+            }]
+          }],
+          "tips": ["One short tip"]
         }
       `;
 
@@ -725,26 +817,109 @@ export default function App() {
         }
       });
 
-      console.log("Planova Kidz: Gemini API Response received.");
       if (!response.text) {
-        console.error("Planova Kidz: Empty response from Gemini API.");
         throw new Error("Empty response from Gemini API.");
       }
 
       const result = JSON.parse(response.text);
-      console.log("Planova Kidz: Parsed result:", result);
       
+      // Post-process to filter out hallucinated activities
+      const allowedActivities = new Set([
+        ...fixedClasses.map(c => c.name.toLowerCase()),
+        ...practiceGoals.map(p => p.name.toLowerCase()),
+        ...chores.map(c => c.name.toLowerCase()),
+        ...freeTimes.map(f => f.name.toLowerCase()),
+        "free time ✨"
+      ]);
+
+      if (result.days) {
+        result.days = result.days.map((day: any) => {
+          const isSchoolDay = settings.schoolDays.includes(day.day as DayOfWeek);
+          const requiredStart24 = isSchoolDay ? settings.schoolDayStartTime : '08:00';
+          
+          let daySlots = day.slots;
+          
+          // Filter out hallucinations
+          daySlots = daySlots.filter((slot: any) => {
+            const name = slot.activity.toLowerCase();
+            if (name.includes("free time")) return true;
+            return allowedActivities.has(name);
+          });
+
+          // Check if first timed slot matches start time
+          const timedSlots = daySlots.filter((s: any) => !s.isFlexible && s.time);
+          if (timedSlots.length > 0) {
+            // Sort by time
+            timedSlots.sort((a: any, b: any) => {
+              const parse = (t: string) => {
+                const match = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                if (!match) return 0;
+                let h = parseInt(match[1]);
+                const m = parseInt(match[2]);
+                const p = match[3].toUpperCase();
+                if (p === 'PM' && h < 12) h += 12;
+                if (p === 'AM' && h === 12) h = 0;
+                return h * 60 + m;
+              };
+              return parse(a.time) - parse(b.time);
+            });
+
+            const firstSlotTime = timedSlots[0].time;
+            const match = firstSlotTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
+            if (match) {
+              let h = parseInt(match[1]);
+              const m = parseInt(match[2]);
+              const p = match[3].toUpperCase();
+              if (p === 'PM' && h < 12) h += 12;
+              if (p === 'AM' && h === 12) h = 0;
+              const slotTimeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+              
+              if (slotTimeStr > requiredStart24) {
+                // Prepend Free Time if gap at start
+                const startMins = parseInt(requiredStart24.split(':')[0]) * 60 + parseInt(requiredStart24.split(':')[1]);
+                const slotMins = h * 60 + m;
+                const gapMins = slotMins - startMins;
+                
+                const gapDuration = gapMins >= 60 ? `${Math.floor(gapMins/60)}h${gapMins%60 > 0 ? ` ${gapMins%60}m` : ''}` : `${gapMins}m`;
+                
+                daySlots.unshift({
+                  time: format12h(requiredStart24),
+                  activity: "Free Time ✨",
+                  duration: gapDuration,
+                  type: "FreeTime",
+                  isFlexible: false,
+                  reminder: false
+                });
+              }
+            }
+          } else if (isSchoolDay) {
+            // No timed slots at all? Fill entire school day window
+            const startMins = parseInt(requiredStart24.split(':')[0]) * 60 + parseInt(requiredStart24.split(':')[1]);
+            const endMins = parseInt(settings.bedtime.split(':')[0]) * 60 + parseInt(settings.bedtime.split(':')[1]);
+            const gapMins = endMins - startMins;
+            const gapDuration = gapMins >= 60 ? `${Math.floor(gapMins/60)}h${gapMins%60 > 0 ? ` ${gapMins%60}m` : ''}` : `${gapMins}m`;
+            
+            daySlots.push({
+              time: format12h(requiredStart24),
+              activity: "Free Time ✨",
+              duration: gapDuration,
+              type: "FreeTime",
+              isFlexible: false,
+              reminder: false
+            });
+          }
+
+          return { ...day, slots: daySlots };
+        });
+      }
+
       // Check if user cancelled while waiting
       if (generationActive.current) {
-        console.log("Plan generated successfully:", result);
         setPlan(result);
         setActiveTab('plan');
-      } else {
-        console.log("Generation finished but was cancelled by user.");
       }
     } catch (error: any) {
       if (generationActive.current) {
-        console.error("Failed to generate plan:", error);
         alert(`Oops! Something went wrong: ${error.message || "Unknown error"}`);
       }
     } finally {
@@ -820,6 +995,11 @@ export default function App() {
       return;
     }
 
+    if (!hasAcceptedAiConsent) {
+      setShowAiConsentModal(true);
+      return;
+    }
+
     if (isStoryLoading) return;
     
     setIsStoryLoading(true);
@@ -849,16 +1029,13 @@ export default function App() {
       ];
       const randomTheme = themes[Math.floor(Math.random() * themes.length)];
 
-      console.log("Planova Kidz: Generating story text for theme:", randomTheme);
       const textResponse = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `Tell a very short, exciting 3-sentence story for a child about ${randomTheme}.`,
       });
       const text = textResponse.text || "Once upon a time, there was a magical adventure...";
-      console.log("Planova Kidz: Story text generated:", text);
       setStoryText(text);
 
-      console.log("Planova Kidz: Generating story audio...");
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: [{ parts: [{ text: `Read this excitedly: ${text}` }] }],
@@ -889,6 +1066,86 @@ export default function App() {
     }
   };
 
+  const renderAiConsentModal = () => (
+    <AnimatePresence>
+      {showAiConsentModal && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[100] flex items-center justify-center p-6"
+        >
+          <motion.div 
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.9, y: 20 }}
+            className="bg-white rounded-[40px] w-full max-w-sm overflow-hidden shadow-2xl"
+          >
+            <div className="bg-gradient-to-br from-indigo-600 to-violet-600 p-8 text-center space-y-4">
+              <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto backdrop-blur-sm shadow-xl">
+                <Sparkles className="w-8 h-8 text-white" />
+              </div>
+              <h3 className="text-xl font-black text-white">Smart Planning Consent</h3>
+            </div>
+            
+            <div className="p-8 space-y-6">
+              <div className="space-y-4">
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                    <User className="w-5 h-5 text-indigo-600" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-bold text-slate-900 text-sm">What we share</h4>
+                    <p className="text-xs text-slate-500 leading-relaxed font-medium">Activity names, times, and goals. Your name is NOT shared.</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+                    <Globe className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-bold text-slate-900 text-sm">Who gets it</h4>
+                    <p className="text-xs text-slate-500 leading-relaxed font-medium">Data is transmitted securely to Google Gemini AI to help organize your week.</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="font-bold text-slate-900 text-sm">Your Choice</h4>
+                    <p className="text-xs text-slate-500 leading-relaxed font-medium">You can revoke this consent at any time in the 'Me' tab.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <button 
+                  onClick={() => {
+                    setHasAcceptedAiConsent(true);
+                    setShowAiConsentModal(false);
+                    localStorage.setItem('ai_consent_accepted', 'true');
+                  }}
+                  className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all text-sm uppercase tracking-widest"
+                >
+                  I Agree & Continue
+                </button>
+                <button 
+                  onClick={() => setShowAiConsentModal(false)}
+                  className="w-full text-slate-400 font-bold py-2 text-xs uppercase tracking-widest hover:text-slate-600 transition-colors"
+                >
+                  Not Now
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
   const renderPrivacy = () => {
     return (
       <motion.div 
@@ -904,40 +1161,58 @@ export default function App() {
           >
             <ChevronLeft className="w-6 h-6 text-slate-400" />
           </button>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Privacy Policy</h2>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Privacy & AI</h2>
         </header>
 
         <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-6 text-left">
-          <section className="space-y-2">
-            <h3 className="font-black text-indigo-600 text-xs uppercase tracking-widest">Our Promise</h3>
+          <section className="space-y-4">
+            <h3 className="font-black text-indigo-600 text-xs uppercase tracking-widest">AI Data Disclosure</h3>
             <p className="text-sm text-slate-600 leading-relaxed font-medium">
-              Planova Kidz is built with your privacy in mind. We do not track your behavior, show ads, or sell your data to anyone.
+              To build your schedule and stories, this app uses <strong className="text-slate-900">Google Gemini AI</strong>. We follow strict safety rules for children:
+            </p>
+            <div className="bg-slate-50 p-4 rounded-2xl space-y-3">
+              <div className="flex gap-3">
+                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
+                <p className="text-[11px] text-slate-500 leading-normal">
+                  <strong className="text-slate-700">Service Provider:</strong> Data is sent securely to Google LLC.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
+                <p className="text-[11px] text-slate-500 leading-normal">
+                  <strong className="text-slate-700">Shared Data:</strong> Only activity names (e.g., "Violin Lesson") and chores are shared.
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
+                <p className="text-[11px] text-slate-500 leading-normal">
+                  <strong className="text-slate-700">Excluded Data:</strong> Names, ages, and device identifiers are <strong className="text-rose-600">never</strong> shared.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-2">
+            <h3 className="font-black text-rose-600 text-xs uppercase tracking-widest">Local Storage</h3>
+            <p className="text-sm text-slate-600 leading-relaxed font-medium">
+              Your profile and class details are stored strictly on your device. We do not have servers that save your data.
             </p>
           </section>
 
           <section className="space-y-2">
-            <h3 className="font-black text-rose-600 text-xs uppercase tracking-widest">Local Data</h3>
+            <h3 className="font-black text-emerald-600 text-xs uppercase tracking-widest">No Ads or Tracking</h3>
             <p className="text-sm text-slate-600 leading-relaxed font-medium">
-              Your name, classes, and settings are stored strictly on your own device using local storage. We do not have a server that saves your personal information.
+              We do not include third-party advertising, trackers, or hidden analytics. Planova Kidz is designed to be a safe, private space for you.
             </p>
           </section>
 
-          <section className="space-y-2">
-            <h3 className="font-black text-emerald-600 text-xs uppercase tracking-widest">Smart Planning (AI)</h3>
-            <p className="text-sm text-slate-600 leading-relaxed font-medium">
-              When you generate a schedule, the activity names and times are shared with Google's Gemini AI to organize your week. This data is only used for the generation process and is not stored by us.
-            </p>
-          </section>
-
-          <section className="space-y-2">
-            <h3 className="font-black text-violet-600 text-xs uppercase tracking-widest">Notifications</h3>
-            <p className="text-sm text-slate-600 leading-relaxed font-medium">
-              Reminders are handled locally on your phone. We do not send push notifications from external servers.
-            </p>
-          </section>
-
-          <div className="pt-4 border-t border-slate-50 flex justify-center">
-            <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">Last Updated: April 2026</p>
+          <div className="pt-4 border-t border-slate-50">
+            <button 
+              onClick={() => setShowPrivacy(false)}
+              className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-widest active:scale-95 transition-all"
+            >
+              Close
+            </button>
           </div>
         </div>
       </motion.div>
@@ -1043,31 +1318,85 @@ export default function App() {
               <h3 className="font-bold text-lg">Today's Schedule</h3>
               <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full uppercase tracking-wider">Active</span>
             </div>
-            <div className="relative space-y-0">
-              {todayPlan?.slots.map((slot, i) => (
-                <div key={i} className="relative pb-6">
-                  {/* Visual timeline line between activities */}
-                  {i !== todayPlan.slots.length - 1 && (
-                    <div className={`absolute left-[45px] top-14 bottom-0 w-0.5 ${theme.lightBg} z-0`} />
-                  )}
+            <div className="relative space-y-6">
+              {(() => {
+                const isSchoolDay = settings.schoolDays.includes(today);
+                const startTime24 = isSchoolDay ? settings.schoolDayStartTime : '08:00';
+                
+                const daySlots = todayPlan?.slots || [];
+                const timedSlots = daySlots.filter(slot => {
+                  if (slot.isFlexible) return false;
+                  if (!slot.time) return false;
                   
-                  <div className={`bg-white p-4 rounded-2xl border ${theme.border} shadow-sm relative z-10`}>
-                    <div className="flex items-center gap-4">
-                      <div className="text-center min-w-[60px]">
-                        <p className="text-xs font-bold text-slate-400 uppercase">{slot.time}</p>
-                        <p className={`text-[10px] font-medium ${theme.text}`}>{slot.duration}</p>
-                      </div>
-                      <div className={`h-8 w-[2px] ${theme.lightBg} rounded-full`} />
-                      <div className="flex-1">
-                        <p className="font-bold text-slate-700">{slot.activity}</p>
-                      </div>
-                      {slot.reminder && <BellRing className="w-4 h-4 text-amber-500" />}
+                  // Convert 12h slot time to 24h for comparison
+                  const match = slot.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                  if (!match) return true;
+                  
+                  let h = parseInt(match[1]);
+                  const m = parseInt(match[2]);
+                  const p = match[3].toUpperCase();
+                  if (p === 'PM' && h < 12) h += 12;
+                  if (p === 'AM' && h === 12) h = 0;
+                  const slotTimeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                  
+                  return slotTimeStr >= startTime24;
+                });
+
+                const flexibleSlots = daySlots.filter(s => s.isFlexible);
+
+                return (
+                  <>
+                    {/* Timed Section */}
+                    <div className="space-y-0">
+                      {timedSlots.map((slot, i) => (
+                        <div key={i} className="relative pb-6">
+                          {i !== timedSlots.length - 1 && (
+                            <div className={`absolute left-[45px] top-14 bottom-0 w-0.5 ${theme.lightBg} z-0`} />
+                          )}
+                          
+                          <div className={`bg-white p-4 rounded-2xl border ${theme.border} shadow-sm relative z-10`}>
+                            <div className="flex items-center gap-4">
+                              <div className="text-center min-w-[60px]">
+                                <p className="text-xs font-bold text-slate-400 uppercase">{slot.time}</p>
+                                <p className={`text-[10px] font-medium ${theme.text}`}>{slot.duration}</p>
+                              </div>
+                              <div className={`h-8 w-[2px] ${theme.lightBg} rounded-full`} />
+                              <div className="flex-1">
+                                <p className="font-bold text-slate-700">{slot.activity}</p>
+                              </div>
+                              {slot.reminder && <BellRing className="w-4 h-4 text-amber-500" />}
+                            </div>
+                            <ActivityTimer durationStr={slot.duration} theme={theme} title={slot.activity} />
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    
-                    <ActivityTimer durationStr={slot.duration} theme={theme} title={slot.activity} />
-                  </div>
-                </div>
-              ))}
+
+                    {/* Flexible Section */}
+                    {flexibleSlots.length > 0 && (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 text-indigo-600 px-2">
+                          <LayoutGrid className="w-4 h-4" />
+                          <h4 className="text-sm font-black uppercase tracking-widest">Flexible Tasks</h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {flexibleSlots.map((slot, i) => (
+                            <div key={i} className="bg-gradient-to-br from-white to-indigo-50/30 p-4 rounded-2xl border-2 border-indigo-50 shadow-sm flex items-center justify-between group hover:border-indigo-200 transition-all">
+                              <div className="flex-1">
+                                <p className="font-bold text-slate-800 text-sm">{slot.activity}</p>
+                                <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{slot.duration} needed</span>
+                              </div>
+                              <div className={`w-8 h-8 rounded-xl ${theme.lightBg} flex items-center justify-center text-indigo-500`}>
+                                <Zap className="w-4 h-4" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}
@@ -1207,6 +1536,7 @@ export default function App() {
                 setNewClassDuration('30m');
                 setNewClassReminder(false);
               }
+              setFormError(null);
               setShowAddClass(!showAddClass);
             }} 
             className={`p-2 rounded-xl active:scale-90 transition-all ${showAddClass ? 'bg-slate-100 text-slate-400' : 'bg-indigo-50 text-indigo-600'}`}
@@ -1224,6 +1554,16 @@ export default function App() {
               onSubmit={handleAddClass}
               className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 space-y-3 overflow-hidden"
             >
+              {formError && (
+                <motion.p 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-[11px] font-bold text-rose-500 bg-rose-50 p-2 rounded-lg border border-rose-100 flex items-center gap-2"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                  {formError}
+                </motion.p>
+              )}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-indigo-400 uppercase">Class Name</label>
                 <input 
@@ -1380,6 +1720,7 @@ export default function App() {
                 setEditingFreeTimeId(null);
                 setNewFreeTimeName('');
               }
+              setFormError(null);
               setShowAddFreeTime(!showAddFreeTime);
             }} 
             className={`p-2 rounded-xl active:scale-90 transition-all ${showAddFreeTime ? 'bg-slate-100 text-slate-400' : 'bg-violet-50 text-violet-600'}`}
@@ -1397,6 +1738,16 @@ export default function App() {
               onSubmit={handleAddFreeTime}
               className="bg-violet-50 p-4 rounded-2xl border border-violet-100 space-y-3 overflow-hidden"
             >
+              {formError && (
+                <motion.p 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-[11px] font-bold text-rose-500 bg-rose-50 p-2 rounded-lg border border-rose-100 flex items-center gap-2"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                  {formError}
+                </motion.p>
+              )}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-violet-400 uppercase">Activity Name</label>
                 <input 
@@ -1529,6 +1880,7 @@ export default function App() {
                 setEditingPracticeId(null);
                 setNewPracticeName('');
               }
+              setFormError(null);
               setShowAddPractice(!showAddPractice);
             }} 
             className={`p-2 rounded-xl active:scale-90 transition-all ${showAddPractice ? 'bg-slate-100 text-slate-400' : 'bg-amber-50 text-amber-600'}`}
@@ -1546,6 +1898,16 @@ export default function App() {
               onSubmit={handleAddPractice}
               className="bg-amber-50 p-4 rounded-2xl border border-amber-100 space-y-3 overflow-hidden"
             >
+              {formError && (
+                <motion.p 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-[11px] font-bold text-rose-500 bg-rose-50 p-2 rounded-lg border border-rose-100 flex items-center gap-2"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                  {formError}
+                </motion.p>
+              )}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-amber-400 uppercase">Goal Name</label>
                 <input 
@@ -1634,6 +1996,7 @@ export default function App() {
                 setEditingChoreId(null);
                 setNewChoreName('');
               }
+              setFormError(null);
               setShowAddChore(!showAddChore);
             }} 
             className={`p-2 rounded-xl active:scale-90 transition-all ${showAddChore ? 'bg-slate-100 text-slate-400' : 'bg-emerald-50 text-emerald-600'}`}
@@ -1651,6 +2014,16 @@ export default function App() {
               onSubmit={handleAddChore}
               className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 space-y-3 overflow-hidden"
             >
+              {formError && (
+                <motion.p 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-[11px] font-bold text-rose-500 bg-rose-50 p-2 rounded-lg border border-rose-100 flex items-center gap-2"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                  {formError}
+                </motion.p>
+              )}
               <div className="space-y-1">
                 <label className="text-[10px] font-bold text-emerald-400 uppercase">Chore Name</label>
                 <input 
@@ -1902,43 +2275,105 @@ export default function App() {
               key={currentDayPlan.day}
               initial={{ x: 20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
-              className="space-y-3"
+              className="space-y-8"
             >
-              {currentDayPlan.slots.map((slot, sIdx) => {
-                // Find original index for toggleReminder
+              {(() => {
+                const day = currentDayPlan.day as DayOfWeek;
+                const isSchoolDay = settings.schoolDays.includes(day);
+                const startTime24 = isSchoolDay ? settings.schoolDayStartTime : '08:00';
+
+                const timedSlots = currentDayPlan.slots.filter(slot => {
+                  if (slot.isFlexible) return false;
+                  if (!slot.time) return false;
+                  const match = slot.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+                  if (!match) return true;
+                  let h = parseInt(match[1]);
+                  const m = parseInt(match[2]);
+                  const p = match[3].toUpperCase();
+                  if (p === 'PM' && h < 12) h += 12;
+                  if (p === 'AM' && h === 12) h = 0;
+                  const slotTimeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                  return slotTimeStr >= startTime24;
+                });
+
+                const flexibleSlots = currentDayPlan.slots.filter(s => s.isFlexible);
                 const originalDayIdx = plan?.days.findIndex(d => d.day === currentDayPlan.day) ?? 0;
-                
+
                 return (
-                  <div key={sIdx} className={`bg-white p-4 rounded-2xl border-2 flex items-center gap-4 transition-all shadow-sm ${slot.reminder ? 'border-amber-300 bg-amber-50/30' : theme.border}`}>
-                    <div className="flex flex-col items-center justify-center min-w-[50px]">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
-                        {slot.time?.includes(' ') ? slot.time.split(' ')[1] : '--'}
-                      </span>
-                      <span className="text-sm font-black text-slate-700 leading-none">
-                        {slot.time?.includes(' ') ? slot.time.split(' ')[0] : slot.time || '--'}
-                      </span>
+                  <>
+                    {/* Timed Activities */}
+                    <div className="space-y-3">
+                      {timedSlots.map((slot, sIdx) => {
+                        const originalSlotIdx = currentDayPlan.slots.indexOf(slot);
+                        return (
+                          <div key={sIdx} className={`bg-white p-4 rounded-2xl border-2 flex items-center gap-4 transition-all shadow-sm ${slot.reminder ? 'border-amber-300 bg-amber-50/30' : theme.border}`}>
+                            <div className="flex flex-col items-center justify-center min-w-[50px]">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
+                                {slot.time?.includes(' ') ? slot.time.split(' ')[1] : '--'}
+                              </span>
+                              <span className="text-sm font-black text-slate-700 leading-none">
+                                {slot.time?.includes(' ') ? slot.time.split(' ')[0] : slot.time || '--'}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <p className="font-bold text-sm text-slate-800 truncate">{slot.activity}</p>
+                                {slot.type === 'Class' && (
+                                  <span className="text-[8px] font-black px-1.5 py-0.5 rounded uppercase border border-indigo-200 text-indigo-500 bg-indigo-50">
+                                    Class
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`text-[9px] font-black ${theme.lightBg} ${theme.text} px-2 py-0.5 rounded-full uppercase`}>{slot.duration}</span>
+                            </div>
+                            <button 
+                              onClick={() => toggleReminder(originalDayIdx, originalSlotIdx)}
+                              className={`p-2 rounded-xl transition-all active:scale-90 ${slot.reminder ? 'bg-amber-100 text-amber-600 shadow-inner' : 'bg-slate-50 text-slate-300 hover:bg-slate-100 hover:text-slate-400'}`}
+                              title={slot.reminder ? `Reminder set for ${slot.activity}` : `Set reminder for ${slot.activity}`}
+                            >
+                              {slot.reminder ? <BellRing className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <p className="font-bold text-sm text-slate-800 truncate">{slot.activity}</p>
-                        {slot.type === 'Class' && (
-                          <span className="text-[8px] font-black px-1.5 py-0.5 rounded uppercase border border-indigo-200 text-indigo-500 bg-indigo-50">
-                            Class
-                          </span>
-                        )}
+
+                    {/* Flexible Tasks */}
+                    {flexibleSlots.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-indigo-600 px-2 font-black uppercase tracking-widest text-xs">
+                          <LayoutGrid className="w-4 h-4" />
+                          <span>Flexible Tasks</span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-3">
+                          {flexibleSlots.map((slot, sIdx) => {
+                            const originalSlotIdx = currentDayPlan.slots.indexOf(slot);
+                            return (
+                              <div key={sIdx} className="bg-white p-5 rounded-[28px] border-2 border-indigo-50 shadow-sm flex items-center justify-between group hover:border-indigo-200 transition-all">
+                                <div className="flex items-center gap-4">
+                                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-500">
+                                    <Zap className="w-5 h-5" />
+                                  </div>
+                                  <div>
+                                    <p className="font-black text-slate-900 leading-tight">{slot.activity}</p>
+                                    <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mt-1">{slot.duration} Needed</p>
+                                  </div>
+                                </div>
+                                <button 
+                                  onClick={() => toggleReminder(originalDayIdx, originalSlotIdx)}
+                                  className={`p-3 rounded-2xl transition-all active:scale-90 ${slot.reminder ? 'bg-amber-100 text-amber-600' : 'bg-slate-50 text-slate-300 hover:bg-indigo-50 hover:text-indigo-400'}`}
+                                >
+                                  {slot.reminder ? <BellRing className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <span className={`text-[9px] font-black ${theme.lightBg} ${theme.text} px-2 py-0.5 rounded-full uppercase`}>{slot.duration}</span>
-                    </div>
-                    <button 
-                      onClick={() => toggleReminder(originalDayIdx, sIdx)}
-                      className={`p-2 rounded-xl transition-all active:scale-90 ${slot.reminder ? 'bg-amber-100 text-amber-600 shadow-inner' : 'bg-slate-50 text-slate-300 hover:bg-slate-100 hover:text-slate-400'}`}
-                      title={slot.reminder ? `Reminder set for ${slot.activity}` : `Set reminder for ${slot.activity}`}
-                    >
-                      {slot.reminder ? <BellRing className="w-4 h-4" /> : <Bell className="w-4 h-4" />}
-                    </button>
-                  </div>
+                    )}
+                  </>
                 );
-              })}
+              })()}
             </motion.div>
           </div>
         );
@@ -2051,6 +2486,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 pt-[env(safe-area-inset-top)]">
+      {renderAiConsentModal()}
       <div className="h-6 bg-white w-full sticky top-0 z-50 md:hidden" />
 
       <main className="pb-24 pt-4 px-6 max-w-md mx-auto">
@@ -2168,6 +2604,23 @@ export default function App() {
                       </div>
 
                       <div className="flex flex-col gap-2">
+                        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Globe className="w-4 h-4 text-indigo-500" />
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">AI Consent</span>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              const newVal = !hasAcceptedAiConsent;
+                              setHasAcceptedAiConsent(newVal);
+                              localStorage.setItem('ai_consent_accepted', newVal ? 'true' : 'false');
+                            }}
+                            className={`w-10 h-6 rounded-full transition-all relative ${hasAcceptedAiConsent ? 'bg-indigo-500' : 'bg-slate-300'}`}
+                          >
+                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${hasAcceptedAiConsent ? 'right-1' : 'left-1'}`} />
+                          </button>
+                        </div>
+
                         <button 
                           onClick={async () => {
                             const pending = await LocalNotifications.getPending();

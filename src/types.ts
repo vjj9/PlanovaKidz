@@ -39,10 +39,11 @@ export interface UserSettings {
 }
 
 export interface PlanSlot {
-  time: string;
+  time?: string;
   activity: string;
   duration: string;
-  type?: 'Class' | 'Other';
+  type?: 'Class' | 'Other' | 'Chore' | 'Goal' | 'FreeTime';
+  isFlexible?: boolean;
   reminder?: boolean;
 }
 
