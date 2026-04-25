@@ -713,11 +713,18 @@ export default function App() {
     return `${h12}:${minutes.toString().padStart(2, '0')} ${period}`;
   };
 
-  const generatePlan = async () => {
-    if (!hasAcceptedAiConsent) {
+  const generatePlan = async (bypassAiConsent: boolean = false) => {
+    if (!hasAcceptedAiConsent && !bypassAiConsent) {
       setShowAiConsentModal(true);
       return;
     }
+
+    const hasData = fixedClasses.length > 0 || practiceGoals.length > 0 || chores.length > 0 || freeTimes.length > 0;
+    if (!hasData) {
+      console.log("Planova Kidz: No data to generate plan from.");
+      return;
+    }
+
     setIsGenerating(true);
     setActiveTab('plan');
     try {
@@ -777,7 +784,7 @@ export default function App() {
 
       console.log("Planova Kidz: Calling Gemini API...");
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.1-flash-lite-preview",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -1031,14 +1038,14 @@ export default function App() {
       const randomTheme = themes[Math.floor(Math.random() * themes.length)];
 
       const textResponse = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.1-flash-lite-preview",
         contents: `Tell a very short, exciting 3-sentence story for a child about ${randomTheme}.`,
       });
       const text = textResponse.text || "Once upon a time, there was a magical adventure...";
       setStoryText(text);
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
+        model: "gemini-3.1-flash-tts-preview",
         contents: [{ parts: [{ text: `Read this excitedly: ${text}` }] }],
         config: {
           responseModalities: [Modality.AUDIO],
@@ -1128,6 +1135,8 @@ export default function App() {
                     setHasAcceptedAiConsent(true);
                     setShowAiConsentModal(false);
                     localStorage.setItem('ai_consent_accepted', 'true');
+                    // Immediately trigger generation since this modal usually appears after clicking "Generate"
+                    generatePlan(true);
                   }}
                   className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all text-sm uppercase tracking-widest"
                 >
