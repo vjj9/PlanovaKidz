@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Type, ThinkingLevel, Modality } from "@google/genai";
+import * as Sentry from "@sentry/react";
 import { 
   FixedClass, 
   UserSettings, 
@@ -299,6 +300,16 @@ export default function App() {
       timestamp: new Date().toLocaleTimeString(),
       message: `${message}${errorMsg ? ' | ' + errorMsg : ''}`
     };
+    
+    // Send to Sentry
+    if (error) {
+      Sentry.captureException(error, {
+        extra: { contextMessage: message }
+      });
+    } else {
+      Sentry.captureMessage(message);
+    }
+
     setAppLogs(prev => {
       const updated = [entry, ...prev].slice(0, 50); // Keep more logs for diagnostics
       localStorage.setItem('app_diagnostic_logs', JSON.stringify(updated));
