@@ -284,10 +284,31 @@ export default function App() {
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
   const [editingFreeTimeId, setEditingFreeTimeId] = useState<string | null>(null);
 
+  const [appLogs, setAppLogs] = useState<{timestamp: string, message: string}[]>(() => {
+    try {
+      const saved = localStorage.getItem('app_diagnostic_logs');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const logAppError = (message: string, error?: any) => {
     const errorMsg = error ? (error.message || (typeof error === 'string' ? error : JSON.stringify(error))) : '';
-    console.error(`[Planova Error] ${message} | ${errorMsg}`, error);
+    const entry = {
+      timestamp: new Date().toLocaleTimeString(),
+      message: `${message}${errorMsg ? ' | ' + errorMsg : ''}`
+    };
+    setAppLogs(prev => {
+      const updated = [entry, ...prev].slice(0, 50); // Keep more logs for diagnostics
+      localStorage.setItem('app_diagnostic_logs', JSON.stringify(updated));
+      return updated;
+    });
+    console.error(`[Planova Diagnostic] ${entry.message}`, error);
   };
+
+  const [debugTapCount, setDebugTapCount] = useState(0);
+  const [showDebug, setShowDebug] = useState(false);
 
   const [notificationStatus, setNotificationStatus] = useState<'granted' | 'denied' | 'prompt'>('prompt');
   const [formError, setFormError] = useState<string | null>(null);
@@ -714,17 +735,24 @@ export default function App() {
     return `${h12}:${minutes.toString().padStart(2, '0')} ${period}`;
   };
 
-  const callAiWithRetry = async (fn: () => Promise<any>, maxRetries = 2) => {
+  const callAiWithRetry = async (fn: () => Promise<any>, maxRetries = 3) => {
     let attempt = 0;
     while (attempt <= maxRetries) {
       try {
         return await fn();
       } catch (error: any) {
-        const isRetryable = error.message?.includes('503') || error.message?.includes('rate limit') || error.message?.includes('quota') || error.message?.includes('overloaded') || error.message?.includes('DEADLINE_EXCEEDED');
+        const isRetryable = 
+          error.message?.includes('503') || 
+          error.message?.includes('rate limit') || 
+          error.message?.includes('quota') || 
+          error.message?.includes('overloaded') || 
+          error.message?.includes('DEADLINE_EXCEEDED') ||
+          error.message?.includes('500');
+          
         if (isRetryable && attempt < maxRetries) {
           attempt++;
-          const delay = 1500 * attempt;
-          console.warn(`[Planova AI] Call failed, retrying (${attempt}/${maxRetries})...`, error.message);
+          const delay = 2000 * Math.pow(2, attempt - 1); // Exponential backoff: 2s, 4s, 8s
+          console.warn(`[Planova AI] Call failed, retrying (${attempt}/${maxRetries}) in ${delay}ms...`, error.message);
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
@@ -811,7 +839,7 @@ export default function App() {
 
       console.log("Planova Kidz: Calling Gemini API...");
       const response = await callAiWithRetry(() => ai.models.generateContent({
-        model: "gemini-3.1-flash-lite-preview",
+        model: "gemini-3-flash-preview",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -1082,7 +1110,7 @@ export default function App() {
       const randomTheme = themes[Math.floor(Math.random() * themes.length)];
 
       const textResponse = await callAiWithRetry(() => ai.models.generateContent({
-        model: "gemini-3.1-flash-lite-preview",
+        model: "gemini-3-flash-preview",
         contents: `Tell a very short, exciting 3-sentence story for a child about ${randomTheme}.`,
       }));
       const text = textResponse.text || "Once upon a time, there was a magical adventure...";
@@ -2454,9 +2482,59 @@ export default function App() {
 
   const renderProfile = () => (
     <div className="flex flex-col items-center justify-center py-12 text-center space-y-6">
-      <div className="w-24 h-24 bg-gradient-to-br from-indigo-100 via-violet-100 to-emerald-100 rounded-full flex items-center justify-center shadow-inner">
+      <div 
+        onClick={() => {
+          const next = debugTapCount + 1;
+          if (next >= 7) {
+            setShowDebug(prev => !prev);
+            setDebugTapCount(0);
+          } else {
+            setDebugTapCount(next);
+            // reset after 2.5 seconds of inactivity
+            const timer = setTimeout(() => setDebugTapCount(0), 2500);
+          }
+        }}
+        className="w-24 h-24 bg-gradient-to-br from-indigo-100 via-violet-100 to-emerald-100 rounded-full flex items-center justify-center shadow-inner active:scale-95 transition-transform"
+      >
         <User className="w-12 h-12 text-violet-600" />
       </div>
+
+      {showDebug && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-sm bg-slate-900 text-slate-100 rounded-3xl p-5 text-[10px] space-y-4 font-mono text-left shadow-2xl border border-slate-700"
+        >
+          <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+            <span className="font-black text-indigo-400 uppercase tracking-widest text-[9px]">Diagnostic Console</span>
+            <div className="flex gap-3">
+              <button onClick={() => {
+                const logsTxt = appLogs.map(l => `[${l.timestamp}] ${l.message}`).join('\n');
+                navigator.clipboard.writeText(`Planova Kidz Diagnostic Logs:\n${logsTxt}`);
+                alert("Logs copied to clipboard!");
+              }} className="text-emerald-400 font-bold">COPY</button>
+              <button 
+                onClick={() => {
+                  setAppLogs([]);
+                  localStorage.removeItem('app_diagnostic_logs');
+                }}
+                className="text-rose-400 font-bold"
+              >CLEAR</button>
+            </div>
+          </div>
+          <div className="max-h-64 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+            {appLogs.length === 0 ? <p className="text-slate-500 italic">No diagnostic events captured.</p> : 
+              appLogs.map((log, i) => (
+                <div key={i} className="leading-normal border-b border-slate-800 pb-2">
+                  <span className="text-indigo-400 font-bold">[{log.timestamp}]</span><br/>
+                  <span className="text-slate-300">{log.message}</span>
+                </div>
+              ))
+            }
+          </div>
+          <p className="text-[8px] text-slate-500 uppercase tracking-tighter">Diagnostic mode is temporary and will hide on refresh.</p>
+        </motion.div>
+      )}
 
       {!isEditingProfile && (
         <div className="flex gap-2">
