@@ -284,27 +284,9 @@ export default function App() {
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
   const [editingFreeTimeId, setEditingFreeTimeId] = useState<string | null>(null);
 
-  const [appLogs, setAppLogs] = useState<{timestamp: string, message: string}[]>(() => {
-    try {
-      const saved = localStorage.getItem('app_diagnostic_logs');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-
   const logAppError = (message: string, error?: any) => {
     const errorMsg = error ? (error.message || (typeof error === 'string' ? error : JSON.stringify(error))) : '';
-    const entry = {
-      timestamp: new Date().toLocaleTimeString(),
-      message: `${message}${errorMsg ? ' | ' + errorMsg : ''}`
-    };
-    setAppLogs(prev => {
-      const updated = [entry, ...prev].slice(0, 20);
-      localStorage.setItem('app_diagnostic_logs', JSON.stringify(updated));
-      return updated;
-    });
-    console.error(`[Planova Diagnostic] ${entry.message}`, error);
+    console.error(`[Planova Error] ${message} | ${errorMsg}`, error);
   };
 
   const [notificationStatus, setNotificationStatus] = useState<'granted' | 'denied' | 'prompt'>('prompt');
@@ -732,6 +714,25 @@ export default function App() {
     return `${h12}:${minutes.toString().padStart(2, '0')} ${period}`;
   };
 
+  const callAiWithRetry = async (fn: () => Promise<any>, maxRetries = 2) => {
+    let attempt = 0;
+    while (attempt <= maxRetries) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        const isRetryable = error.message?.includes('503') || error.message?.includes('rate limit') || error.message?.includes('quota') || error.message?.includes('overloaded') || error.message?.includes('DEADLINE_EXCEEDED');
+        if (isRetryable && attempt < maxRetries) {
+          attempt++;
+          const delay = 1500 * attempt;
+          console.warn(`[Planova AI] Call failed, retrying (${attempt}/${maxRetries})...`, error.message);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw error;
+      }
+    }
+  };
+
   const generatePlan = async (bypassAiConsent: boolean = false) => {
     if (!hasAcceptedAiConsent && !bypassAiConsent) {
       setShowAiConsentModal(true);
@@ -809,7 +810,7 @@ export default function App() {
       `;
 
       console.log("Planova Kidz: Calling Gemini API...");
-      const response = await ai.models.generateContent({
+      const response = await callAiWithRetry(() => ai.models.generateContent({
         model: "gemini-3.1-flash-lite-preview",
         contents: prompt,
         config: {
@@ -849,7 +850,7 @@ export default function App() {
             }
           }
         }
-      });
+      }));
 
       if (!response.text) {
         throw new Error("Empty response from Gemini API.");
@@ -1080,14 +1081,14 @@ export default function App() {
       ];
       const randomTheme = themes[Math.floor(Math.random() * themes.length)];
 
-      const textResponse = await ai.models.generateContent({
+      const textResponse = await callAiWithRetry(() => ai.models.generateContent({
         model: "gemini-3.1-flash-lite-preview",
         contents: `Tell a very short, exciting 3-sentence story for a child about ${randomTheme}.`,
-      });
+      }));
       const text = textResponse.text || "Once upon a time, there was a magical adventure...";
       setStoryText(text);
 
-      const response = await ai.models.generateContent({
+      const response = await callAiWithRetry(() => ai.models.generateContent({
         model: "gemini-3.1-flash-tts-preview",
         contents: [{ parts: [{ text: `Read this excitedly: ${text}` }] }],
         config: {
@@ -1098,7 +1099,7 @@ export default function App() {
             },
           },
         },
-      });
+      }));
 
       const audioPart = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
       const base64Audio = audioPart?.inlineData?.data;
@@ -2606,53 +2607,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* Diagnostic Log Viewer */}
-          <div className="mt-8 border-t border-slate-100 pt-6 space-y-4">
-            <div className="flex items-center justify-center gap-2 text-slate-400">
-              <ClipboardList className="w-4 h-4" />
-              <p className="text-[10px] font-black uppercase tracking-widest">Diagnostic Support</p>
-            </div>
-            
-            {appLogs.length > 0 ? (
-              <div className="bg-slate-50 rounded-2xl p-4 text-left space-y-3 border border-slate-100">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Recent Errors</span>
-                  <button 
-                    onClick={() => {
-                      setAppLogs([]);
-                      localStorage.setItem('app_diagnostic_logs', JSON.stringify([]));
-                    }}
-                    className="text-[9px] font-black uppercase text-rose-400 tracking-wider hover:text-rose-600"
-                  >
-                    Clear Logs
-                  </button>
-                </div>
-                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
-                  {appLogs.map((log, i) => (
-                    <div key={i} className="text-[10px] border-l-2 border-indigo-200 pl-2 py-1">
-                      <span className="text-indigo-400 font-bold mr-2">[{log.timestamp}]</span>
-                      <span className="text-slate-600 font-medium">{log.message}</span>
-                    </div>
-                  ))}
-                </div>
-                <button 
-                  onClick={() => {
-                    const text = appLogs.map(l => `[${l.timestamp}] ${l.message}`).join('\n');
-                    navigator.clipboard.writeText(`Planova Kidz Logs:\n${text}`);
-                    alert('Logs copied to clipboard! You can now send them to support.');
-                  }}
-                  className="w-full bg-white border border-slate-200 text-slate-600 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all active:scale-95"
-                >
-                  Copy Logs to Clipboard
-                </button>
-              </div>
-            ) : (
-              <p className="text-[10px] text-slate-400 font-bold italic">No errors detected. Everything is running smoothly! ✨</p>
-            )}
-            <p className="text-[9px] text-slate-400 px-4 leading-relaxed">
-              If you experience issues, copy these logs and send them to our support team to help us fix things faster.
-            </p>
-          </div>
         </div>
       )}
     </div>
