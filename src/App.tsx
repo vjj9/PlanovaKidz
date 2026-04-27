@@ -194,6 +194,7 @@ export default function App() {
 
   useEffect(() => {
     if (!process.env.GEMINI_API_KEY) {
+      logAppError("Gemini API Key is missing!");
       setApiKeyMissing(true);
     }
   }, []);
@@ -208,12 +209,6 @@ export default function App() {
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (plan) {
-      setFocusedDayIndex(0);
-    }
-  }, [plan]);
 
   const generationActive = useRef(false);
   const [loadingMessage, setLoadingMessage] = useState("Consulting the schedule experts...");
@@ -288,6 +283,29 @@ export default function App() {
   const [editingPracticeId, setEditingPracticeId] = useState<string | null>(null);
   const [editingChoreId, setEditingChoreId] = useState<string | null>(null);
   const [editingFreeTimeId, setEditingFreeTimeId] = useState<string | null>(null);
+
+  const [appLogs, setAppLogs] = useState<{timestamp: string, message: string}[]>(() => {
+    try {
+      const saved = localStorage.getItem('app_diagnostic_logs');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const logAppError = (message: string, error?: any) => {
+    const errorMsg = error ? (error.message || (typeof error === 'string' ? error : JSON.stringify(error))) : '';
+    const entry = {
+      timestamp: new Date().toLocaleTimeString(),
+      message: `${message}${errorMsg ? ' | ' + errorMsg : ''}`
+    };
+    setAppLogs(prev => {
+      const updated = [entry, ...prev].slice(0, 20);
+      localStorage.setItem('app_diagnostic_logs', JSON.stringify(updated));
+      return updated;
+    });
+    console.error(`[Planova Diagnostic] ${entry.message}`, error);
+  };
 
   const [notificationStatus, setNotificationStatus] = useState<'granted' | 'denied' | 'prompt'>('prompt');
   const [formError, setFormError] = useState<string | null>(null);
@@ -434,7 +452,8 @@ export default function App() {
         alert('Notification permission is denied. Please go to your iPhone Settings > Planova Kidz > Notifications and turn them on manually.');
       }
     } catch (error) {
-      alert('Something went wrong while requesting permissions. Please check your phone settings.');
+      logAppError("Notification permission error", error);
+      alert('We had some trouble updating your notification settings. Please check your phone settings to make sure notifications are allowed.');
     }
   };
 
@@ -735,6 +754,12 @@ export default function App() {
       }
 
       const ai = new GoogleGenAI({ apiKey });
+      
+      if (!process.env.GEMINI_API_KEY) {
+        logAppError("Gemini API Key is missing for story generation!");
+        return;
+      }
+
       const prompt = `
         Create a weekly schedule for a child.
         
@@ -752,18 +777,19 @@ export default function App() {
         
         PLANNING RULES:
         1. STRICT REQUIREMENT: ONLY use activities provided above. DO NOT invent tasks like "Homework" or "Clean Room".
-        2. ENTIRE WINDOW: You MUST schedule the ENTIRE time from ${format12h(settings.schoolDayStartTime)} to Bedtime (${format12h(settings.bedtime)}) on school days. NO GAPS.
-        3. START TIME: The first activity on a school day MUST start exactly at ${format12h(settings.schoolDayStartTime)}. NO EXCEPTIONS.
-        4. DURATION CALC: On school days, the total available duration to fill is exactly ${
-          (parseFloat(settings.bedtime.split(':')[0]) + parseFloat(settings.bedtime.split(':')[1])/60) - 
-          (parseFloat(settings.schoolDayStartTime.split(':')[0]) + parseFloat(settings.schoolDayStartTime.split(':')[1])/60)
-        } hours. Your activity durations in a day MUST sum to this total.
-        5. On Weekends: 
+        2. ENTIRE WINDOW: You MUST schedule the ENTIRE time from ${format12h(settings.schoolDayStartTime)} to Bedtime (${format12h(settings.bedtime)}) on school days. NO GAPS. Your schedule MUST be continuous.
+        3. START TIME: The first activity on a school day MUST start exactly at ${format12h(settings.schoolDayStartTime)}. This is non-negotiable.
+        4. DURATION CALC: The total duration to account for is exactly ${
+          Math.round(((parseFloat(settings.bedtime.split(':')[0]) + parseFloat(settings.bedtime.split(':')[1])/60) - 
+          (parseFloat(settings.schoolDayStartTime.split(':')[0]) + parseFloat(settings.schoolDayStartTime.split(':')[1])/60)) * 100) / 100
+        } hours. The durations of your scheduled slots for that day MUST add up to this exact total.
+        5. SLOT TIMES: For school days, the 'time' field for each slot MUST be calculated based on the start time and preceding durations.
+        6. On Weekends: 
            - List CLASSES and FIXED FREE TIME at their specific times.
            - GOALS and CHORES combined MUST NOT exceed ${settings.weekendAvailableHours} hours total per day.
            - Mark these weekend GOALS/CHORES as "isFlexible": true and leave out "time".
-        6. NO GAPS: Use "Free Time ✨" (Timed) to fill ALL gaps. The day MUST be a continuous block from ${format12h(settings.schoolDayStartTime)} to Bedtime.
-        7. Return ONLY valid JSON.
+        7. NO GAPS: Use "Free Time ✨" (Timed) to fill ALL gaps between other activities. The day MUST be a continuous block from ${format12h(settings.schoolDayStartTime)} to Bedtime.
+        8. Return ONLY valid JSON.
         
         JSON Schema:
         {
@@ -845,7 +871,7 @@ export default function App() {
           const isSchoolDay = settings.schoolDays.includes(day.day as DayOfWeek);
           const requiredStart24 = isSchoolDay ? settings.schoolDayStartTime : '08:00';
           
-          let daySlots = day.slots;
+          let daySlots = day.slots || [];
           
           // Filter out hallucinations
           daySlots = daySlots.filter((slot: any) => {
@@ -856,38 +882,49 @@ export default function App() {
 
           // Check if first timed slot matches start time
           const timedSlots = daySlots.filter((s: any) => !s.isFlexible && s.time);
+          
+          const parseTime = (t: string) => {
+            const match = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+            if (!match) return 0;
+            let h = parseInt(match[1]);
+            const m = parseInt(match[2]);
+            const p = match[3].toUpperCase();
+            if (p === 'PM' && h < 12) h += 12;
+            if (p === 'AM' && h === 12) h = 0;
+            return h * 60 + m;
+          };
+
           if (timedSlots.length > 0) {
             // Sort by time
-            timedSlots.sort((a: any, b: any) => {
-              const parse = (t: string) => {
-                const match = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
-                if (!match) return 0;
-                let h = parseInt(match[1]);
-                const m = parseInt(match[2]);
-                const p = match[3].toUpperCase();
-                if (p === 'PM' && h < 12) h += 12;
-                if (p === 'AM' && h === 12) h = 0;
-                return h * 60 + m;
-              };
-              return parse(a.time) - parse(b.time);
-            });
+            timedSlots.sort((a: any, b: any) => parseTime(a.time) - parseTime(b.time));
 
-            const firstSlotTime = timedSlots[0].time;
-            const match = firstSlotTime.match(/(\d+):(\d+)\s*(AM|PM)/i);
-            if (match) {
-              let h = parseInt(match[1]);
-              const m = parseInt(match[2]);
-              const p = match[3].toUpperCase();
-              if (p === 'PM' && h < 12) h += 12;
-              if (p === 'AM' && h === 12) h = 0;
-              const slotTimeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+            const firstSlotTimeMins = parseTime(timedSlots[0].time);
+            const requiredStartMins = parseTime(format12h(requiredStart24));
+            
+            if (firstSlotTimeMins > requiredStartMins) {
+              const gapMins = firstSlotTimeMins - requiredStartMins;
               
-              if (slotTimeStr > requiredStart24) {
-                // Prepend Free Time if gap at start
-                const startMins = parseInt(requiredStart24.split(':')[0]) * 60 + parseInt(requiredStart24.split(':')[1]);
-                const slotMins = h * 60 + m;
-                const gapMins = slotMins - startMins;
+              // If the gap is small (<= 30m) and the first slot is Free Time, just SNAP it to the start
+              if (gapMins <= 30 && timedSlots[0].activity.toLowerCase().includes("free time")) {
+                const originalDuration = timedSlots[0].duration;
+                let newDuration = originalDuration;
                 
+                // Add gap to duration
+                const hMatch = originalDuration.match(/(\d+)h/);
+                const mMatch = originalDuration.match(/(\d+)m/);
+                let totalDurMins = 0;
+                if (hMatch) totalDurMins += parseInt(hMatch[1]) * 60;
+                if (mMatch) totalDurMins += parseInt(mMatch[1]);
+                totalDurMins += gapMins;
+                
+                const h = Math.floor(totalDurMins/60);
+                const m = totalDurMins % 60;
+                newDuration = h > 0 ? `${h}h${m > 0 ? ` ${m}m` : ''}` : `${m}m`;
+                
+                timedSlots[0].time = format12h(requiredStart24);
+                timedSlots[0].duration = newDuration;
+              } else {
+                // Prepend Free Time if gap at start
                 const gapDuration = gapMins >= 60 ? `${Math.floor(gapMins/60)}h${gapMins%60 > 0 ? ` ${gapMins%60}m` : ''}` : `${gapMins}m`;
                 
                 daySlots.unshift({
@@ -899,11 +936,14 @@ export default function App() {
                   reminder: false
                 });
               }
+            } else if (firstSlotTimeMins < requiredStartMins && isSchoolDay) {
+              // If AI tries to start BEFORE school availability, snap it to start
+              timedSlots[0].time = format12h(requiredStart24);
             }
           } else if (isSchoolDay) {
             // No timed slots at all? Fill entire school day window
-            const startMins = parseInt(requiredStart24.split(':')[0]) * 60 + parseInt(requiredStart24.split(':')[1]);
-            const endMins = parseInt(settings.bedtime.split(':')[0]) * 60 + parseInt(settings.bedtime.split(':')[1]);
+            const startMins = parseTime(format12h(requiredStart24));
+            const endMins = parseTime(format12h(settings.bedtime));
             const gapMins = endMins - startMins;
             const gapDuration = gapMins >= 60 ? `${Math.floor(gapMins/60)}h${gapMins%60 > 0 ? ` ${gapMins%60}m` : ''}` : `${gapMins}m`;
             
@@ -924,11 +964,13 @@ export default function App() {
       // Check if user cancelled while waiting
       if (generationActive.current) {
         setPlan(result);
+        setFocusedDayIndex(0);
         setActiveTab('plan');
       }
     } catch (error: any) {
+      logAppError("generatePlan error", error);
       if (generationActive.current) {
-        alert(`Oops! Something went wrong: ${error.message || "Unknown error"}`);
+        alert("Oops! Something went wrong while creating your plan. Please try again in a moment.");
       }
     } finally {
       setIsGenerating(false);
@@ -992,8 +1034,9 @@ export default function App() {
       
       source.start();
     } catch (err) {
-      console.error("Error playing PCM audio:", err);
+      logAppError("Error playing PCM audio", err);
       setIsStoryPlaying(false);
+      // No alert here, silent failure for audio is better for kids flow
     }
   };
 
@@ -1017,7 +1060,7 @@ export default function App() {
     try {
       const apiKey = process.env.GEMINI_API_KEY;
       if (!apiKey) {
-        console.error("Planova Kidz: Gemini API Key is missing for story generation!");
+        logAppError("Gemini API Key is missing for story generation!");
         return;
       }
 
@@ -1061,14 +1104,13 @@ export default function App() {
       const base64Audio = audioPart?.inlineData?.data;
       
       if (base64Audio) {
-        console.log("Planova Kidz: Story audio generated successfully.");
         setStoryAudio(base64Audio);
         playPCM(base64Audio);
       } else {
-        console.error("Planova Kidz: No audio data in Gemini response.");
+        logAppError("No audio data in Gemini response.");
       }
     } catch (error) {
-      console.error("Planova Kidz: Failed to generate story:", error);
+      logAppError("Failed to generate story", error);
     } finally {
       setIsStoryLoading(false);
     }
@@ -2236,30 +2278,6 @@ export default function App() {
         <p className="text-slate-500 text-sm">AI-crafted for a balanced week.</p>
       </header>
 
-      {/* Weekly Summary Section */}
-      <div className="grid grid-cols-1 gap-3">
-        {(() => {
-          const items = Array.from(new Set(
-            plan?.days.flatMap(d => d.slots)
-              .filter(s => s.type === 'Class')
-              .map(s => s.activity)
-          ));
-          
-          if (items.length === 0) return null;
-
-          return (
-            <div className="bg-indigo-50 border-indigo-100 text-indigo-700 p-3 rounded-xl border text-xs space-y-1">
-              <p className="font-black uppercase tracking-wider opacity-60 text-[10px]">Your Classes</p>
-              <ul className="space-y-0.5">
-                {items.map((item, i) => (
-                  <li key={i} className="font-bold truncate">• {item}</li>
-                ))}
-              </ul>
-            </div>
-          );
-        })()}
-      </div>
-
       {(() => {
         const today = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date()) as DayOfWeek;
         const dayOrder = DAYS;
@@ -2586,6 +2604,54 @@ export default function App() {
             >
               Reset App Data
             </button>
+          </div>
+
+          {/* Diagnostic Log Viewer */}
+          <div className="mt-8 border-t border-slate-100 pt-6 space-y-4">
+            <div className="flex items-center justify-center gap-2 text-slate-400">
+              <ClipboardList className="w-4 h-4" />
+              <p className="text-[10px] font-black uppercase tracking-widest">Diagnostic Support</p>
+            </div>
+            
+            {appLogs.length > 0 ? (
+              <div className="bg-slate-50 rounded-2xl p-4 text-left space-y-3 border border-slate-100">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Recent Errors</span>
+                  <button 
+                    onClick={() => {
+                      setAppLogs([]);
+                      localStorage.setItem('app_diagnostic_logs', JSON.stringify([]));
+                    }}
+                    className="text-[9px] font-black uppercase text-rose-400 tracking-wider hover:text-rose-600"
+                  >
+                    Clear Logs
+                  </button>
+                </div>
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  {appLogs.map((log, i) => (
+                    <div key={i} className="text-[10px] border-l-2 border-indigo-200 pl-2 py-1">
+                      <span className="text-indigo-400 font-bold mr-2">[{log.timestamp}]</span>
+                      <span className="text-slate-600 font-medium">{log.message}</span>
+                    </div>
+                  ))}
+                </div>
+                <button 
+                  onClick={() => {
+                    const text = appLogs.map(l => `[${l.timestamp}] ${l.message}`).join('\n');
+                    navigator.clipboard.writeText(`Planova Kidz Logs:\n${text}`);
+                    alert('Logs copied to clipboard! You can now send them to support.');
+                  }}
+                  className="w-full bg-white border border-slate-200 text-slate-600 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all active:scale-95"
+                >
+                  Copy Logs to Clipboard
+                </button>
+              </div>
+            ) : (
+              <p className="text-[10px] text-slate-400 font-bold italic">No errors detected. Everything is running smoothly! ✨</p>
+            )}
+            <p className="text-[9px] text-slate-400 px-4 leading-relaxed">
+              If you experience issues, copy these logs and send them to our support team to help us fix things faster.
+            </p>
           </div>
         </div>
       )}
