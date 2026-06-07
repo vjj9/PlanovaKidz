@@ -29,7 +29,11 @@ import {
   Wand2,
   LayoutGrid,
   Zap,
-  Globe
+  Globe,
+  AlertTriangle,
+  Play,
+  Pause,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Type, ThinkingLevel, Modality } from "@google/genai";
@@ -83,37 +87,37 @@ const FREQUENCY_OPTIONS = ['Weekly', '2x week', '3x week', '4x week', '5x week',
 const CHORE_FREQUENCY_OPTIONS = ['Daily', 'Weekly'];
 const DURATION_OPTIONS = ['15m', '30m', '45m', '1h', '1h 15m', '1h 30m', '2h', '2h 30m', '3h'];
 
-const ActivityTimer = ({ durationStr, theme, title }: { durationStr: string, theme?: { bg: string, button: string, buttonHover: string }, title?: string }) => {
-  const [isActive, setIsActive] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [totalTime, setTotalTime] = useState(0);
+const ActivityTimer = ({ 
+  durationStr, 
+  theme, 
+  title,
+  activeTimer,
+  setActiveTimer
+}: { 
+  durationStr: string; 
+  theme?: { bg: string; button: string; buttonHover: string; text?: string; border?: string; lightBg?: string }; 
+  title?: string;
+  activeTimer: any;
+  setActiveTimer: React.Dispatch<React.SetStateAction<any>>;
+}) => {
+  const isThisActive = activeTimer && activeTimer.title === title;
 
-  useEffect(() => {
+  // Let's compute duration seconds
+  const getSecondsFromStr = (str: string): number => {
     let secs = 0;
-    if (!durationStr) return;
-    
-    // Support formats like "4.5h", "4h 30m", "30m", "4h"
-    const hMatch = durationStr.match(/(\d+(\.\d+)?)h/);
-    const mMatch = durationStr.match(/(\d+(\.\d+)?)m/);
-    
+    if (!str) return 0;
+    const hMatch = str.match(/(\d+(\.\d+)?)h/);
+    const mMatch = str.match(/(\d+(\.\d+)?)m/);
     if (hMatch) secs += parseFloat(hMatch[1]) * 3600;
     if (mMatch) secs += parseFloat(mMatch[1]) * 60;
-    
-    setTotalTime(secs);
-    setTimeLeft(secs);
-  }, [durationStr]);
+    return secs;
+  };
 
-  useEffect(() => {
-    let interval: any;
-    if (isActive && timeLeft > 0) {
-      interval = setInterval(() => setTimeLeft(t => t - 1), 1000);
-    } else if (timeLeft === 0) {
-      setIsActive(false);
-    }
-    return () => clearInterval(interval);
-  }, [isActive, timeLeft]);
+  const currentTotalTime = isThisActive ? activeTimer.totalTime : getSecondsFromStr(durationStr);
+  const currentTimeLeft = isThisActive ? activeTimer.timeLeft : currentTotalTime;
+  const currentIsActive = isThisActive ? activeTimer.isActive : false;
 
-  const progress = totalTime > 0 ? ((totalTime - timeLeft) / totalTime) * 100 : 0;
+  const progress = currentTotalTime > 0 ? ((currentTotalTime - currentTimeLeft) / currentTotalTime) * 100 : 0;
   
   const formatTime = (totalSeconds: number) => {
     const m = Math.floor(totalSeconds / 60);
@@ -121,7 +125,37 @@ const ActivityTimer = ({ durationStr, theme, title }: { durationStr: string, the
     return { mins: m, secs: s.toString().padStart(2, '0') };
   };
 
-  const timerDisplay = formatTime(timeLeft);
+  const timerDisplay = formatTime(currentTimeLeft);
+
+  const handleToggle = () => {
+    if (isThisActive) {
+      setActiveTimer((prev: any) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          isActive: !prev.isActive,
+          lastUpdated: Date.now()
+        };
+      });
+    } else {
+      // Set this timer as active and start it!
+      setActiveTimer({
+        title,
+        durationStr,
+        timeLeft: currentTotalTime,
+        totalTime: currentTotalTime,
+        isActive: true,
+        themeClass: theme,
+        lastUpdated: Date.now()
+      });
+    }
+  };
+
+  const handleReset = () => {
+    if (isThisActive) {
+      setActiveTimer(null);
+    }
+  };
 
   return (
     <div className="w-full mt-4 pt-4 border-t border-slate-50">
@@ -138,28 +172,82 @@ const ActivityTimer = ({ durationStr, theme, title }: { durationStr: string, the
             <span className="text-[10px] font-bold text-indigo-400 uppercase ml-2 tracking-normal">MINS</span>
           </div>
         </div>
-        <button 
-          onClick={() => setIsActive(!isActive)} 
-          className={`text-xs font-black px-4 py-2 rounded-2xl transition-all shadow-sm active:scale-95 ${
-            isActive 
-              ? 'bg-amber-100 text-amber-700 shadow-inner' 
-              : timeLeft === 0 
-                ? 'bg-emerald-100 text-emerald-700'
-                : theme ? `${theme.button} ${theme.buttonHover}` : 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
-          }`}
-        >
-          {timeLeft === 0 ? 'COMPLETED! ✨' : isActive ? 'PAUSE' : 'START TIMER'}
-        </button>
+        <div className="flex gap-2">
+          {isThisActive && (
+            <button 
+              onClick={handleReset}
+              className="text-[10px] uppercase font-black px-3 py-2 rounded-2xl bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all active:scale-95"
+            >
+              Reset
+            </button>
+          )}
+          <button 
+            onClick={handleToggle} 
+            className={`text-xs font-black px-4 py-2 rounded-2xl transition-all shadow-sm active:scale-95 ${
+              currentIsActive 
+                ? 'bg-amber-100 text-amber-700 shadow-inner' 
+                : currentTimeLeft === 0 
+                  ? 'bg-emerald-100 text-emerald-700 font-extrabold'
+                  : theme ? `${theme.button} ${theme.buttonHover}` : 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
+            }`}
+          >
+            {currentTimeLeft === 0 ? 'COMPLETED! ✨' : currentIsActive ? 'PAUSE' : 'START TIMER'}
+          </button>
+        </div>
       </div>
       <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden shadow-inner">
         <motion.div 
           initial={false}
           animate={{ width: `${progress}%` }}
-          className={`h-full transition-all duration-1000 ${timeLeft === 0 ? 'bg-emerald-500' : theme ? theme.bg : 'bg-indigo-500'}`} 
+          className={`h-full transition-all duration-1000 ${currentTimeLeft === 0 ? 'bg-emerald-500' : theme ? theme.bg : 'bg-indigo-500'}`} 
         />
       </div>
     </div>
   );
+};
+
+const durationToMinutes = (durStr: string): number => {
+  if (!durStr) return 0;
+  let mins = 0;
+  const hMatch = durStr.match(/(\d+(\.\d+)?)h/);
+  const mMatch = durStr.match(/(\d+(\.\d+)?)m/);
+  if (hMatch) mins += parseFloat(hMatch[1]) * 60;
+  if (mMatch) mins += parseFloat(mMatch[1]);
+  return mins;
+};
+
+const getGoalsAndChoresDuration = (dayPlan: DailyPlan): number => {
+  let totalMins = 0;
+  dayPlan.slots.forEach(slot => {
+    if (slot.type === 'Goal' || slot.type === 'Chore') {
+      totalMins += durationToMinutes(slot.duration);
+    }
+  });
+  return totalMins;
+};
+
+const getWeekendStartTime24 = (slots: any[]): string => {
+  if (!slots || slots.length === 0) return '12:00';
+  const timed = slots.filter(s => !s.isFlexible && s.time);
+  if (timed.length === 0) return '12:00';
+  
+  let earliestMins = 720; // 12:00 PM
+  timed.forEach(s => {
+    const match = s.time.match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (match) {
+      let h = parseInt(match[1]);
+      const m = parseInt(match[2]);
+      const p = match[3].toUpperCase();
+      if (p === 'PM' && h < 12) h += 12;
+      if (p === 'AM' && h === 12) h = 0;
+      const mins = h * 60 + m;
+      if (mins < earliestMins) earliestMins = mins;
+    }
+  });
+  
+  const h = Math.floor(earliestMins / 60);
+  const m = earliestMins % 60;
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
 };
 
 export default function App() {
@@ -179,6 +267,10 @@ export default function App() {
     bedtime: '20:30',
   });
   const [plan, setPlan] = useState<WeeklyPlan | null>(null);
+  const [planSettings, setPlanSettings] = useState<UserSettings | null>(() => {
+    const saved = localStorage.getItem('kids_plan_settings');
+    return saved ? JSON.parse(saved) : null;
+  });
   const [focusedDayIndex, setFocusedDayIndex] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -190,6 +282,71 @@ export default function App() {
   const [apiKeyMissing, setApiKeyMissing] = useState(false);
   const [hasAcceptedAiConsent, setHasAcceptedAiConsent] = useState(false);
   const [showAiConsentModal, setShowAiConsentModal] = useState(false);
+  const [activeTimer, setActiveTimer] = useState<any>(() => {
+    const saved = localStorage.getItem('planova_active_timer');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.isActive && parsed.lastUpdated) {
+          const elapsedSecs = Math.floor((Date.now() - parsed.lastUpdated) / 1000);
+          parsed.timeLeft = Math.max(0, parsed.timeLeft - elapsedSecs);
+          if (parsed.timeLeft === 0) {
+            parsed.isActive = false;
+          }
+        }
+        return parsed;
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
+
+  const [timerSwipedOut, setTimerSwipedOut] = useState(false);
+
+  useEffect(() => {
+    if (activeTimer?.title) {
+      setTimerSwipedOut(false);
+    }
+  }, [activeTimer?.title]);
+
+  useEffect(() => {
+    if (activeTimer === undefined) return;
+    if (activeTimer === null) {
+      localStorage.removeItem('planova_active_timer');
+    } else {
+      localStorage.setItem('planova_active_timer', JSON.stringify({
+        ...activeTimer,
+        lastUpdated: Date.now()
+      }));
+    }
+  }, [activeTimer]);
+
+  useEffect(() => {
+    if (!activeTimer || !activeTimer.isActive) return;
+    
+    const interval = setInterval(() => {
+      setActiveTimer((prev: any) => {
+        if (!prev || !prev.isActive) return prev;
+        if (prev.timeLeft <= 1) {
+          clearInterval(interval);
+          return {
+            ...prev,
+            timeLeft: 0,
+            isActive: false,
+            lastUpdated: Date.now()
+          };
+        }
+        return {
+          ...prev,
+          timeLeft: prev.timeLeft - 1,
+          lastUpdated: Date.now()
+        };
+      });
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [activeTimer?.isActive, activeTimer?.title]);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
@@ -449,10 +606,20 @@ export default function App() {
     if (plan) {
       localStorage.setItem('kids_plan', JSON.stringify(plan));
     }
+    if (planSettings) {
+      localStorage.setItem('kids_plan_settings', JSON.stringify(planSettings));
+    } else {
+      localStorage.removeItem('kids_plan_settings');
+    }
     
     // Sync all notifications at once to prevent collisions
     NotificationService.syncAllNotifications(fixedClasses, plan);
-  }, [userName, fixedClasses, practiceGoals, chores, settings, plan]);
+  }, [userName, fixedClasses, practiceGoals, chores, settings, plan, planSettings]);
+
+  // Stop the story if the user navigates away or starts planning
+  useEffect(() => {
+    stopStory();
+  }, [activeTab, hasStarted]);
 
   const requestNotificationPermission = async () => {
     try {
@@ -826,10 +993,19 @@ export default function App() {
         5. SLOT TIMES: For school days, the 'time' field for each slot MUST be calculated based on the start time and preceding durations.
         6. On Weekends: 
            - List CLASSES and FIXED FREE TIME at their specific times.
-           - GOALS and CHORES combined MUST NOT exceed ${settings.weekendAvailableHours} hours total per day.
+           - LIMITS: On Saturday, the sum of durations of all GOALS and CHORES combined MUST NOT exceed ${settings.weekendAvailableHours} hours.
+           - LIMITS: On Sunday, the sum of durations of all GOALS and CHORES combined MUST NOT exceed ${settings.weekendAvailableHours} hours.
+           - If there are many weekly goals or chores, distribute them onto school days (weekdays) after school hours to ensure that you STRICTLY stay below ${settings.weekendAvailableHours} hours per day on weekends.
+           - Do NOT exceed this weekend hours limit under any circumstance. Truncate or move tasks to weekdays to satisfy this.
            - Mark these weekend GOALS/CHORES as "isFlexible": true and leave out "time".
         7. NO GAPS: Use "Free Time ✨" (Timed) to fill ALL gaps between other activities. The day MUST be a continuous block from ${format12h(settings.schoolDayStartTime)} to Bedtime.
-        8. Return ONLY valid JSON.
+        8. GOAL AND CHORE SPLITTING (IMPORTANT):
+           - Kids have short attention spans. If any GOAL or CHORE has a total duration of 1 hour or more per week (e.g., "1h", "1h 15m", "1h 30m", "2h", "3h") and a frequency like "Weekly" or "2x week", "3x week", "4x week" - you MUST NOT schedule it as a single huge block on a single day.
+           - Instead, split this weekly duration into smaller, kid-friendly session lengths (e.g., 15m, 20m, 30m, or 45m) and distribute them across multiple different days of the week.
+           - For example, "Piano Practice (1h 30m, Weekly / 3x week)" must be split and scheduled as three separate 30-minute sessions or two separate 45-minute sessions on different days of the week.
+           - Keep the activity name EXACTLY identical across all occurrences (e.g. "Piano Practice"). DO NOT append part numbers, suffixes (like "Part 1" or "(Split)") or change the spelling, so they map back to user terms perfectly.
+           - Ensure the sum of the split session durations over the course of the week equals the original target total duration (e.g., three 30m sessions sum to exactly 1h 30m).
+        9. Return ONLY valid JSON.
         
         JSON Schema:
         {
@@ -850,7 +1026,7 @@ export default function App() {
 
       console.log("Planova Kidz: Calling Gemini API...");
       const response = await callAiWithRetry(() => ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.1-flash-lite-preview",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -897,30 +1073,172 @@ export default function App() {
 
       const result = JSON.parse(response.text);
       
-      // Post-process to filter out hallucinated activities
-      const allowedActivities = new Set([
-        ...fixedClasses.map(c => c.name.toLowerCase()),
-        ...practiceGoals.map(p => p.name.toLowerCase()),
-        ...chores.map(c => c.name.toLowerCase()),
-        ...freeTimes.map(f => f.name.toLowerCase()),
-        "free time ✨"
-      ]);
+      // Post-process to filter out hallucinated activities and map to exact user terms
+      const originalActivities = [
+        ...fixedClasses.map(c => ({ original: c.name, lower: c.name.toLowerCase() })),
+        ...practiceGoals.map(p => ({ original: p.name, lower: p.name.toLowerCase() })),
+        ...chores.map(c => ({ original: c.name, lower: c.name.toLowerCase() })),
+        ...freeTimes.map(f => ({ original: f.name, lower: f.name.toLowerCase() }))
+      ];
+
+      const cleanStr = (s: string) => s.replace(/[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD00-\uDFFF]/g, '').replace(/[^\w\s]/g, '').toLowerCase().trim();
+
+      const mapActivityName = (aiName: string) => {
+        if (!aiName) return null;
+        const normAi = aiName.toLowerCase().trim();
+        if (normAi.includes("free time") || normAi.includes("freetime")) {
+          return "Free Time ✨";
+        }
+        
+        // Exact match
+        const exactMatch = originalActivities.find(act => act.lower === normAi);
+        if (exactMatch) return exactMatch.original;
+
+        // Cleaned exact match
+        const cleanAi = cleanStr(aiName);
+        if (!cleanAi) return null;
+
+        const cleanExactMatch = originalActivities.find(act => cleanStr(act.lower) === cleanAi);
+        if (cleanExactMatch) return cleanExactMatch.original;
+
+        // Substring / word overlap match
+        const cleanSubstringMatch = originalActivities.find(act => {
+          const cleanAct = cleanStr(act.lower);
+          return cleanAct && (cleanAi.includes(cleanAct) || cleanAct.includes(cleanAi));
+        });
+        if (cleanSubstringMatch) return cleanSubstringMatch.original;
+
+        return null;
+      };
 
       if (result.days) {
         result.days = result.days.map((day: any) => {
           const isSchoolDay = settings.schoolDays.includes(day.day as DayOfWeek);
-          const requiredStart24 = isSchoolDay ? settings.schoolDayStartTime : '08:00';
           
           let daySlots = day.slots || [];
           
-          // Filter out hallucinations
-          daySlots = daySlots.filter((slot: any) => {
-            const name = slot.activity.toLowerCase();
-            if (name.includes("free time")) return true;
-            return allowedActivities.has(name);
-          });
+          // Map to exact user terms & filter out hallucinations (nulls)
+          daySlots = daySlots.map((slot: any) => {
+            const mappedName = mapActivityName(slot.activity);
+            if (mappedName) {
+              return { ...slot, activity: mappedName };
+            }
+            return null;
+          }).filter(Boolean);
+
+          if (!isSchoolDay) {
+            // This is a weekend day (Saturday or Sunday)
+            const dayName = day.day as DayOfWeek;
+
+            // 1. Keep flexible slots (Goals/Chores assigned by the AI as flexible tasks to this weekend day)
+            const flexibleWeekendSlots = daySlots.filter((s: any) => s.isFlexible);
+
+            // 2. Identify the fixed classes and fixed free times scheduled for this day
+            const dayClasses = fixedClasses.filter(c => c.days.includes(dayName));
+            const dayFixedFreeTimes = freeTimes.filter(f => f.days.includes(dayName));
+
+            const fixedSlots = [
+              ...dayClasses.map(c => ({
+                time: format12h(c.startTime),
+                activity: c.name,
+                duration: c.duration,
+                type: 'Class' as const,
+                isFlexible: false,
+                reminder: false
+              })),
+              ...dayFixedFreeTimes.map(f => ({
+                time: format12h(f.startTime),
+                activity: f.name,
+                duration: f.duration,
+                type: 'FreeTime' as const,
+                isFlexible: false,
+                reminder: false
+              }))
+            ];
+
+            // 3. Build the perfect timed weekend schedule using our algorithm
+            const limitMins = settings.weekendAvailableHours * 60;
+            
+            const parseTime = (t: string) => {
+              const match = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+              if (!match) return 0;
+              let h = parseInt(match[1]);
+              const m = parseInt(match[2]);
+              const p = match[3].toUpperCase();
+              if (p === 'PM' && h < 12) h += 12;
+              if (p === 'AM' && h === 12) h = 0;
+              return h * 60 + m;
+            };
+
+            const formatMinutesTo12h = (mins: number) => {
+              let h = Math.floor(mins / 60) % 24;
+              const m = mins % 60;
+              const ampm = h >= 12 ? 'PM' : 'AM';
+              h = h % 12;
+              if (h === 0) h = 12;
+              return `${h}:${m.toString().padStart(2, '0')} ${ampm}`;
+            };
+
+            const sortedFixed = [...fixedSlots].sort((a, b) => parseTime(a.time) - parseTime(b.time));
+
+            let startMins = 720; // 12:00 PM
+            if (sortedFixed.length > 0) {
+              const earliestFixedMins = parseTime(sortedFixed[0].time);
+              if (earliestFixedMins < startMins) {
+                startMins = earliestFixedMins;
+              }
+            }
+
+            let currentMins = startMins;
+            let totalScheduledMins = 0;
+            const timedWeekendSlots: any[] = [];
+
+            for (const fixed of sortedFixed) {
+              const fixedStart = parseTime(fixed.time);
+              const fixedDur = durationToMinutes(fixed.duration);
+              
+              if (fixedStart > currentMins) {
+                const gapMins = fixedStart - currentMins;
+                const gapDurStr = gapMins >= 60 ? `${Math.floor(gapMins/60)}h${gapMins%60 > 0 ? ` ${gapMins%60}m` : ''}` : `${gapMins}m`;
+                timedWeekendSlots.push({
+                  time: formatMinutesTo12h(currentMins),
+                  activity: "Free Time ✨",
+                  duration: gapDurStr,
+                  type: "FreeTime",
+                  isFlexible: false,
+                  reminder: false
+                });
+                totalScheduledMins += gapMins;
+                currentMins = fixedStart;
+              }
+              
+              timedWeekendSlots.push({
+                ...fixed,
+                time: formatMinutesTo12h(fixedStart)
+              });
+              totalScheduledMins += fixedDur;
+              currentMins += fixedDur;
+            }
+
+            if (totalScheduledMins < limitMins) {
+              const remainingMins = limitMins - totalScheduledMins;
+              const remainingDurStr = remainingMins >= 60 ? `${Math.floor(remainingMins/60)}h${remainingMins%60 > 0 ? ` ${remainingMins%60}m` : ''}` : `${remainingMins}m`;
+              timedWeekendSlots.push({
+                time: formatMinutesTo12h(currentMins),
+                activity: "Free Time ✨",
+                duration: remainingDurStr,
+                type: "FreeTime",
+                isFlexible: false,
+                reminder: false
+              });
+            }
+
+            daySlots = [...flexibleWeekendSlots, ...timedWeekendSlots];
+            return { ...day, slots: daySlots };
+          }
 
           // Check if first timed slot matches start time
+          const requiredStart24 = isSchoolDay ? settings.schoolDayStartTime : '08:00';
           const timedSlots = daySlots.filter((s: any) => !s.isFlexible && s.time);
           
           const parseTime = (t: string) => {
@@ -1004,6 +1322,7 @@ export default function App() {
       // Check if user cancelled while waiting
       if (generationActive.current) {
         setPlan(result);
+        setPlanSettings(settings);
         setFocusedDayIndex(0);
         setActiveTab('plan');
       }
@@ -1062,7 +1381,7 @@ export default function App() {
       
       const source = audioCtx.createBufferSource();
       source.buffer = buffer;
-      source.playbackRate.value = 1.15; // Speed up playback by 15%
+      source.playbackRate.value = 0.95; // Slower, more natural and gentle storytelling pace for kids
       source.connect(audioCtx.destination);
       
       audioSourceRef.current = source;
@@ -1121,7 +1440,7 @@ export default function App() {
       const randomTheme = themes[Math.floor(Math.random() * themes.length)];
 
       const textResponse = await callAiWithRetry(() => ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.1-flash-lite-preview",
         contents: `Tell a very short, exciting 3-sentence story for a child about ${randomTheme}.`,
       }));
       const text = textResponse.text || "Once upon a time, there was a magical adventure...";
@@ -1311,6 +1630,40 @@ export default function App() {
     );
   };
 
+  const checkIfSettingsDirty = () => {
+    if (!plan || !planSettings) return false;
+    
+    const startDiff = settings.schoolDayStartTime !== planSettings.schoolDayStartTime;
+    const bedtimeDiff = settings.bedtime !== planSettings.bedtime;
+    const hoursDiff = settings.weekendAvailableHours !== planSettings.weekendAvailableHours;
+    
+    const daysDiff = settings.schoolDays.length !== planSettings.schoolDays.length ||
+      !settings.schoolDays.every(d => planSettings.schoolDays.includes(d));
+
+    return startDiff || bedtimeDiff || hoursDiff || daysDiff;
+  };
+
+  const getWeekendLimitViolations = () => {
+    if (!plan) return [];
+    const violations: { day: DayOfWeek; hours: number; limit: number }[] = [];
+    const satPlan = plan.days.find(d => d.day === 'Saturday');
+    const sunPlan = plan.days.find(d => d.day === 'Sunday');
+
+    if (satPlan) {
+      const satHours = getGoalsAndChoresDuration(satPlan) / 60;
+      if (satHours > settings.weekendAvailableHours) {
+        violations.push({ day: 'Saturday', hours: Math.round(satHours * 10) / 10, limit: settings.weekendAvailableHours });
+      }
+    }
+    if (sunPlan) {
+      const sunHours = getGoalsAndChoresDuration(sunPlan) / 60;
+      if (sunHours > settings.weekendAvailableHours) {
+        violations.push({ day: 'Sunday', hours: Math.round(sunHours * 10) / 10, limit: settings.weekendAvailableHours });
+      }
+    }
+    return violations;
+  };
+
   const renderHome = () => {
     const today = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date()) as DayOfWeek;
     const todayPlan = plan?.days.find(d => d.day === today);
@@ -1431,6 +1784,30 @@ export default function App() {
           </div>
         ) : (
           <div className="space-y-4">
+            {checkIfSettingsDirty() && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-amber-50 border-2 border-dashed border-amber-200 p-4 rounded-3xl flex items-start gap-3 shadow-sm"
+              >
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center shrink-0 animate-pulse">
+                  <Clock className="w-5 h-5 text-amber-600" />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <h4 className="font-black text-amber-950 text-xs uppercase tracking-wider">Schedule Updated! ⏰</h4>
+                  <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                    You changed your availability settings. To apply these changes to your weekly plan, tap below!
+                  </p>
+                  <button 
+                    onClick={() => generatePlan(true)}
+                    className="mt-2 text-[10px] font-black text-white bg-amber-600 hover:bg-amber-700 px-3 py-2 rounded-xl uppercase tracking-widest transition-colors flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Regenerate Plan
+                  </button>
+                </div>
+              </motion.div>
+            )}
             <div className="flex items-center justify-between">
               <h3 className="font-bold text-lg">Today's Schedule</h3>
               <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full uppercase tracking-wider">Active</span>
@@ -1438,9 +1815,8 @@ export default function App() {
             <div className="relative space-y-6">
               {(() => {
                 const isSchoolDay = settings.schoolDays.includes(today);
-                const startTime24 = isSchoolDay ? settings.schoolDayStartTime : '08:00';
-                
                 const daySlots = todayPlan?.slots || [];
+                const startTime24 = isSchoolDay ? settings.schoolDayStartTime : getWeekendStartTime24(daySlots);
                 const timedSlots = daySlots.filter(slot => {
                   if (slot.isFlexible) return false;
                   if (!slot.time) return false;
@@ -1483,7 +1859,13 @@ export default function App() {
                               </div>
                               {slot.reminder && <BellRing className="w-4 h-4 text-amber-500" />}
                             </div>
-                            <ActivityTimer durationStr={slot.duration} theme={theme} title={slot.activity} />
+                            <ActivityTimer 
+                              durationStr={slot.duration} 
+                              theme={theme} 
+                              title={slot.activity} 
+                              activeTimer={activeTimer}
+                              setActiveTimer={setActiveTimer}
+                            />
                           </div>
                         </div>
                       ))}
@@ -1574,6 +1956,10 @@ export default function App() {
               />
               <span className="text-2xl font-black text-rose-600 min-w-[60px]">{settings.weekendAvailableHours}h</span>
             </div>
+            <p className="text-[10px] text-slate-400 font-medium leading-relaxed pt-1 flex items-start gap-1.5 border-t border-rose-50/50 mt-1">
+              <span className="text-rose-400">💡</span>
+              <span>The AI planner will strictly limit the combined chores and practice goals on Saturday and Sunday to {settings.weekendAvailableHours} hours. Excess goals or chores will automatically be shifted to school days.</span>
+            </p>
           </div>
         </div>
 
@@ -1824,166 +2210,6 @@ export default function App() {
         </div>
       </section>
 
-      {/* Free Time Blocks */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-violet-600">
-            <Sparkles className="w-5 h-5" />
-            <h3 className="font-bold">Free Time</h3>
-          </div>
-          <button 
-            onClick={() => {
-              if (showAddFreeTime) {
-                setEditingFreeTimeId(null);
-                setNewFreeTimeName('');
-              }
-              setFormError(null);
-              setShowAddFreeTime(!showAddFreeTime);
-            }} 
-            className={`p-2 rounded-xl active:scale-90 transition-all ${showAddFreeTime ? 'bg-slate-100 text-slate-400' : 'bg-violet-50 text-violet-600'}`}
-          >
-            <Plus className={`w-5 h-5 transition-transform ${showAddFreeTime ? 'rotate-45' : ''}`} />
-          </button>
-        </div>
-
-        <AnimatePresence>
-          {showAddFreeTime && (
-            <motion.form 
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              onSubmit={handleAddFreeTime}
-              className="bg-violet-50 p-4 rounded-2xl border border-violet-100 space-y-3 overflow-hidden"
-            >
-              {formError && (
-                <motion.p 
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="text-[11px] font-bold text-rose-500 bg-rose-50 p-2 rounded-lg border border-rose-100 flex items-center gap-2"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
-                  {formError}
-                </motion.p>
-              )}
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-violet-400 uppercase">Activity Name</label>
-                <input 
-                  autoFocus
-                  placeholder="e.g. Video Games, Reading"
-                  value={newFreeTimeName}
-                  onChange={(e) => setNewFreeTimeName(e.target.value)}
-                  className="w-full p-2 bg-white rounded-lg border border-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500 font-medium"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-violet-400 uppercase">Days</label>
-                <div className="flex flex-wrap gap-1">
-                  {DAYS.map(d => (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => {
-                        if (newFreeTimeDays.includes(d)) {
-                          setNewFreeTimeDays(newFreeTimeDays.filter(day => day !== d));
-                        } else {
-                          setNewFreeTimeDays([...newFreeTimeDays, d]);
-                        }
-                      }}
-                      className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${
-                        newFreeTimeDays.includes(d) 
-                          ? 'bg-violet-600 text-white shadow-sm' 
-                          : 'bg-white text-violet-400 border border-violet-100 hover:border-violet-300'
-                      }`}
-                    >
-                      {d.slice(0, 3)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-violet-400 uppercase">Start Time</label>
-                  <div className="relative">
-                    <select 
-                      value={newFreeTimeTime}
-                      onChange={(e) => setNewFreeTimeTime(e.target.value)}
-                      className="w-full p-2 bg-white rounded-lg border border-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500 font-medium text-sm appearance-none pr-8"
-                    >
-                      {TIME_OPTIONS.map(time => (
-                        <option key={time} value={time}>{format12h(time)}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-violet-300 pointer-events-none" />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold text-violet-400 uppercase">Duration</label>
-                  <div className="relative">
-                    <select 
-                      value={newFreeTimeDuration}
-                      onChange={(e) => setNewFreeTimeDuration(e.target.value)}
-                      className="w-full p-2 bg-white rounded-lg border border-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500 font-medium text-sm appearance-none pr-8"
-                    >
-                      {DURATION_OPTIONS.map(opt => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-violet-300 pointer-events-none" />
-                  </div>
-                </div>
-              </div>
-              <button type="submit" className="w-full bg-violet-600 text-white py-2 rounded-lg font-bold text-sm">
-                {editingFreeTimeId ? 'Update Free Time' : 'Add Free Time'}
-              </button>
-            </motion.form>
-          )}
-        </AnimatePresence>
-
-        <div className="space-y-2">
-          {Array.from(new Set(freeTimes.map(f => f.name))).map(name => (
-            <div key={name} className="bg-white p-4 rounded-2xl border border-violet-100 shadow-sm space-y-3">
-              <div className="flex items-center justify-between border-b border-violet-50 pb-2">
-                <p className="font-bold text-violet-700">{name}</p>
-                <div className="flex gap-2">
-                  <button 
-                    onClick={() => {
-                      setNewFreeTimeName(name);
-                      setShowAddFreeTime(true);
-                    }}
-                    className="text-violet-500 text-[10px] font-bold uppercase hover:underline"
-                  >
-                    Add Time
-                  </button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {freeTimes.filter(f => f.name === name).map(f => (
-                  <div key={f.id} className="flex items-center justify-between text-xs">
-                    <div className="flex-1">
-                      <p className="text-violet-500/70 font-medium flex items-center gap-1 flex-wrap">
-                        <span className="font-bold text-violet-600">{f.days.join(', ')}</span>
-                        <span>at {format12h(f.startTime)} ({f.duration})</span>
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => startEditFreeTime(f)} className="text-slate-300 hover:text-violet-500 transition-colors">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => setFreeTimes(freeTimes.filter(i => i.id !== f.id))} className="text-slate-300 hover:text-red-500 transition-colors">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-          {freeTimes.length === 0 && !showAddFreeTime && <p className="text-center py-4 text-slate-400 text-sm italic">No free time added.</p>}
-        </div>
-
-        <div className="h-px bg-slate-100 my-6" />
-      </section>
-
       {/* Practice Goals */}
       <section className="space-y-4">
         <div className="flex items-center justify-between">
@@ -2214,6 +2440,165 @@ export default function App() {
           ))}
           {chores.length === 0 && !showAddChore && <p className="text-center py-2 text-slate-400 text-xs italic">No chores added.</p>}
         </div>
+        <div className="h-px bg-slate-100 my-6" />
+      </section>
+
+      {/* Free Time Blocks */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-violet-600">
+            <Sparkles className="w-5 h-5" />
+            <h3 className="font-bold">Free Time</h3>
+          </div>
+          <button 
+            onClick={() => {
+              if (showAddFreeTime) {
+                setEditingFreeTimeId(null);
+                setNewFreeTimeName('');
+              }
+              setFormError(null);
+              setShowAddFreeTime(!showAddFreeTime);
+            }} 
+            className={`p-2 rounded-xl active:scale-90 transition-all ${showAddFreeTime ? 'bg-slate-100 text-slate-400' : 'bg-violet-50 text-violet-600'}`}
+          >
+            <Plus className={`w-5 h-5 transition-transform ${showAddFreeTime ? 'rotate-45' : ''}`} />
+          </button>
+        </div>
+
+        <AnimatePresence>
+          {showAddFreeTime && (
+            <motion.form 
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              onSubmit={handleAddFreeTime}
+              className="bg-violet-50 p-4 rounded-2xl border border-violet-100 space-y-3 overflow-hidden"
+            >
+              {formError && (
+                <motion.p 
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-[11px] font-bold text-rose-500 bg-rose-50 p-2 rounded-lg border border-rose-100 flex items-center gap-2"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                  {formError}
+                </motion.p>
+              )}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-violet-400 uppercase">Activity Name</label>
+                <input 
+                  autoFocus
+                  placeholder="e.g. Video Games, Reading"
+                  value={newFreeTimeName}
+                  onChange={(e) => setNewFreeTimeName(e.target.value)}
+                  className="w-full p-2 bg-white rounded-lg border border-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500 font-medium"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-violet-400 uppercase">Days</label>
+                <div className="flex flex-wrap gap-1">
+                  {DAYS.map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => {
+                        if (newFreeTimeDays.includes(d)) {
+                          setNewFreeTimeDays(newFreeTimeDays.filter(day => day !== d));
+                        } else {
+                          setNewFreeTimeDays([...newFreeTimeDays, d]);
+                        }
+                      }}
+                      className={`px-2 py-1 rounded-md text-[10px] font-bold transition-all ${
+                        newFreeTimeDays.includes(d) 
+                          ? 'bg-violet-600 text-white shadow-sm' 
+                          : 'bg-white text-violet-400 border border-violet-100 hover:border-violet-300'
+                      }`}
+                    >
+                      {d.slice(0, 3)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-violet-400 uppercase">Start Time</label>
+                  <div className="relative">
+                    <select 
+                      value={newFreeTimeTime}
+                      onChange={(e) => setNewFreeTimeTime(e.target.value)}
+                      className="w-full p-2 bg-white rounded-lg border border-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500 font-medium text-sm appearance-none pr-8"
+                    >
+                      {TIME_OPTIONS.map(time => (
+                        <option key={time} value={time}>{format12h(time)}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-violet-300 pointer-events-none" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-violet-400 uppercase">Duration</label>
+                  <div className="relative">
+                    <select 
+                      value={newFreeTimeDuration}
+                      onChange={(e) => setNewFreeTimeDuration(e.target.value)}
+                      className="w-full p-2 bg-white rounded-lg border border-violet-100 focus:outline-none focus:ring-2 focus:ring-violet-500 font-medium text-sm appearance-none pr-8"
+                    >
+                      {DURATION_OPTIONS.map(opt => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-violet-300 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
+              <button type="submit" className="w-full bg-violet-600 text-white py-2 rounded-lg font-bold text-sm">
+                {editingFreeTimeId ? 'Update Free Time' : 'Add Free Time'}
+              </button>
+            </motion.form>
+          )}
+        </AnimatePresence>
+
+        <div className="space-y-2">
+          {Array.from(new Set(freeTimes.map(f => f.name))).map(name => (
+            <div key={name} className="bg-white p-4 rounded-2xl border border-violet-100 shadow-sm space-y-3">
+              <div className="flex items-center justify-between border-b border-violet-50 pb-2">
+                <p className="font-bold text-violet-700">{name}</p>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => {
+                      setNewFreeTimeName(name);
+                      setShowAddFreeTime(true);
+                    }}
+                    className="text-violet-500 text-[10px] font-bold uppercase hover:underline"
+                  >
+                    Add Time
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                {freeTimes.filter(f => f.name === name).map(f => (
+                  <div key={f.id} className="flex items-center justify-between text-xs">
+                    <div className="flex-1">
+                      <p className="text-violet-500/70 font-medium flex items-center gap-1 flex-wrap">
+                        <span className="font-bold text-violet-600">{f.days.join(', ')}</span>
+                        <span>at {format12h(f.startTime)} ({f.duration})</span>
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => startEditFreeTime(f)} className="text-slate-300 hover:text-violet-500 transition-colors">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => setFreeTimes(freeTimes.filter(i => i.id !== f.id))} className="text-slate-300 hover:text-red-500 transition-colors">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {freeTimes.length === 0 && !showAddFreeTime && <p className="text-center py-4 text-slate-400 text-sm italic">No free time added.</p>}
+        </div>
       </section>
 
       <div className="text-center py-2">
@@ -2318,6 +2703,50 @@ export default function App() {
         <p className="text-slate-500 text-sm">AI-crafted for a balanced week.</p>
       </header>
 
+      {checkIfSettingsDirty() && (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-amber-50 border-2 border-dashed border-amber-200 p-4 rounded-3xl flex items-start gap-3 shadow-sm"
+        >
+          <div className="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center shrink-0 animate-pulse">
+            <Clock className="w-5 h-5 text-amber-600" />
+          </div>
+          <div className="flex-1 space-y-1">
+            <h4 className="font-black text-amber-950 text-xs uppercase tracking-wider">Schedule Updated! ⏰</h4>
+            <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+              You changed your availability settings. To apply these changes to your weekly plan, tap below!
+            </p>
+            <button 
+              onClick={() => generatePlan(true)}
+              className="mt-2 text-[10px] font-black text-white bg-amber-600 hover:bg-amber-700 px-3 py-2 rounded-xl uppercase tracking-widest transition-colors flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Regenerate Plan
+            </button>
+          </div>
+        </motion.div>
+      )}
+
+      {getWeekendLimitViolations().map(violation => (
+        <motion.div 
+          key={violation.day}
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-50 border-2 border-red-200 p-4 rounded-3xl flex items-start gap-3 shadow-sm"
+        >
+          <div className="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
+          </div>
+          <div className="flex-1 space-y-1">
+            <h4 className="font-black text-red-950 text-xs uppercase tracking-wider">{violation.day} Limit Exceeded ⚠️</h4>
+            <p className="text-[11px] text-red-800 leading-relaxed font-semibold">
+              Goals and chores scheduled on {violation.day} total <span className="text-red-950 font-black">{violation.hours} hours</span>, which exceeds your set limit of <span className="text-red-950 font-black">{violation.limit} hours</span>.
+            </p>
+          </div>
+        </motion.div>
+      ))}
+
       {(() => {
         const today = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date()) as DayOfWeek;
         const dayOrder = DAYS;
@@ -2373,8 +2802,6 @@ export default function App() {
               {(() => {
                 const day = currentDayPlan.day as DayOfWeek;
                 const isSchoolDay = settings.schoolDays.includes(day);
-                const startTime24 = isSchoolDay ? settings.schoolDayStartTime : '08:00';
-
                 const timedSlots = currentDayPlan.slots.filter(slot => {
                   if (slot.isFlexible) return false;
                   if (!slot.time) return false;
@@ -2386,14 +2813,38 @@ export default function App() {
                   if (p === 'PM' && h < 12) h += 12;
                   if (p === 'AM' && h === 12) h = 0;
                   const slotTimeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                  
+                  const startTime24 = isSchoolDay ? settings.schoolDayStartTime : getWeekendStartTime24(currentDayPlan.slots);
                   return slotTimeStr >= startTime24;
                 });
 
                 const flexibleSlots = currentDayPlan.slots.filter(s => s.isFlexible);
                 const originalDayIdx = plan?.days.findIndex(d => d.day === currentDayPlan.day) ?? 0;
 
+                const currentDayMins = getGoalsAndChoresDuration(currentDayPlan);
+                const currentDayHours = Math.round((currentDayMins / 60) * 10) / 10;
+                const activeDayLimitExceeded = (day === 'Saturday' || day === 'Sunday') && (currentDayMins > settings.weekendAvailableHours * 60);
+
                 return (
                   <>
+                    {(day === 'Saturday' || day === 'Sunday') && (
+                      <div className={`p-4 rounded-3xl flex items-center justify-between border-2 mb-4 transition-all ${
+                        activeDayLimitExceeded 
+                          ? 'bg-red-50 border-red-200 text-red-800' 
+                          : 'bg-slate-50 border-slate-100 text-slate-700'
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className={`w-4 h-4 shrink-0 ${activeDayLimitExceeded ? 'text-red-600 animate-pulse' : 'text-slate-400'}`} />
+                          <span className="text-[10px] font-black uppercase tracking-wider">
+                            {activeDayLimitExceeded ? 'Weekend limit exceeded!' : 'Weekend workload'}
+                          </span>
+                        </div>
+                        <span className={`text-xs font-black font-mono px-2 py-0.5 rounded-full ${activeDayLimitExceeded ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-700'}`}>
+                          {currentDayHours}h / {settings.weekendAvailableHours}h Max
+                        </span>
+                      </div>
+                    )}
+
                     {/* Timed Activities */}
                     <div className="space-y-3">
                       {timedSlots.map((slot, sIdx) => {
@@ -2816,6 +3267,116 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Sleek Floating Restore Badge when Swiped Out */}
+      <AnimatePresence>
+        {activeTimer && timerSwipedOut && (
+          <div className="fixed top-4 left-0 right-0 z-50 px-6 max-w-md mx-auto pointer-events-none">
+            <motion.button
+              initial={{ opacity: 0, y: -50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -50 }}
+              onClick={() => setTimerSwipedOut(false)}
+              className="pointer-events-auto mx-auto flex items-center gap-2 px-4 py-2 bg-indigo-950 text-indigo-200 hover:text-white rounded-full font-black text-xs shadow-lg border border-indigo-900 active:scale-95 transition-all cursor-pointer"
+            >
+              <Clock className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+              <span>{activeTimer.title}</span>
+              <span className="text-white font-mono bg-indigo-900 px-1.5 py-0.5 rounded-lg text-[10px] ml-1">
+                {Math.floor(activeTimer.timeLeft / 60)}:{(activeTimer.timeLeft % 60).toString().padStart(2, '0')}
+              </span>
+              <span className="opacity-60 text-[9px] ml-1 uppercase">Tap to pull down 🔽</span>
+            </motion.button>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Active Timer Widget */}
+      <AnimatePresence>
+        {activeTimer && activeTab !== 'home' && !timerSwipedOut && (
+          <div className="fixed bottom-24 left-0 right-0 z-40 px-6 max-w-md mx-auto pointer-events-none">
+            <motion.div 
+              drag
+              dragMomentum={false}
+              dragElastic={0.11}
+              dragConstraints={{ left: -160, right: 160, top: -600, bottom: 30 }}
+              onDrag={(event, info) => {
+                if (info.point.y < 90) {
+                  setTimerSwipedOut(true);
+                }
+              }}
+              whileDrag={{ scale: 1.02, shadow: "0 25px 50px -12px rgb(0 0 0 / 0.5)" }}
+              initial={{ opacity: 0, y: 50, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -400, scale: 0.9, transition: { duration: 0.25 } }}
+              className="bg-indigo-950 text-white p-3.5 rounded-3xl flex flex-col gap-2 shadow-2xl border border-indigo-950 pointer-events-auto cursor-grab active:cursor-grabbing select-none"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-900 flex items-center justify-center text-indigo-300 shadow-inner shrink-0 pointer-events-none">
+                    <Clock className={`w-4 h-4 ${activeTimer.isActive ? 'animate-spin' : ''}`} style={{ animationDuration: '4s' }} />
+                  </div>
+                  <div className="flex flex-col min-w-0 pointer-events-none">
+                    <span className="text-[8px] font-black uppercase text-indigo-300 tracking-widest leading-none mb-0.5 flex items-center gap-1">
+                      <span>Active Task</span>
+                      <span className="opacity-65">• Swipe up to hide 🖐️</span>
+                    </span>
+                    <span className="text-[11px] font-black truncate leading-tight">{activeTimer.title}</span>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <div className="font-mono text-xs font-black text-indigo-100 flex items-baseline pointer-events-none">
+                    <span>{Math.floor(activeTimer.timeLeft / 60)}</span>
+                    <span className="text-indigo-400 font-bold">:</span>
+                    <span className="text-indigo-300">{(activeTimer.timeLeft % 60).toString().padStart(2, '0')}</span>
+                  </div>
+
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveTimer((prev: any) => {
+                          if (!prev) return null;
+                          return { ...prev, isActive: !prev.isActive, lastUpdated: Date.now() };
+                        });
+                      }}
+                      className={`p-1.5 rounded-xl text-xs font-black cursor-pointer pointer-events-auto transition-all active:scale-90 ${
+                        activeTimer.isActive 
+                          ? 'bg-amber-100 text-amber-800' 
+                          : activeTimer.timeLeft === 0 
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-white text-indigo-950'
+                      }`}
+                    >
+                      {activeTimer.timeLeft === 0 ? '✨' : activeTimer.isActive ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                    </button>
+                    
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveTimer(null);
+                      }}
+                      className="p-1.5 rounded-xl bg-indigo-900 text-indigo-300 hover:text-white cursor-pointer pointer-events-auto transition-all active:scale-90"
+                      title="Close"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              
+              {activeTimer.totalTime > 0 && (
+                <div className="w-full h-1 bg-indigo-950 rounded-full overflow-hidden pointer-events-none">
+                  <div 
+                    className="h-full bg-indigo-400 transition-all duration-1000"
+                    style={{ width: `${((activeTimer.totalTime - activeTimer.timeLeft) / activeTimer.totalTime) * 100}%` }}
+                  />
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-lg border-t border-slate-200 px-8 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] flex items-center justify-between z-50 max-w-md mx-auto rounded-t-[32px] shadow-2xl shadow-slate-200">
         {[
