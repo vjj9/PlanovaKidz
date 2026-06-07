@@ -1213,6 +1213,10 @@ export default function App() {
             const isWeekDay = settings.schoolDays.includes(dayName);
             const dailyLimitHours = (isWeekDay && settings.schoolMode === false) ? (settings.breakAvailableHours ?? 6) : settings.weekendAvailableHours;
             const limitMins = dailyLimitHours * 60;
+
+            // Deduct the flexible slots (Goals and Chores) duration from the overall day limit
+            const flexibleMins = flexibleWeekendSlots.reduce((sum: number, slot: any) => sum + durationToMinutes(slot.duration), 0);
+            const timedLimitMins = Math.max(0, limitMins - flexibleMins);
             
             const parseTime = (t: string) => {
               const match = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
@@ -1275,8 +1279,8 @@ export default function App() {
               currentMins += fixedDur;
             }
 
-            if (totalScheduledMins < limitMins) {
-              const remainingMins = limitMins - totalScheduledMins;
+            if (totalScheduledMins < timedLimitMins) {
+              const remainingMins = timedLimitMins - totalScheduledMins;
               const remainingDurStr = remainingMins >= 60 ? `${Math.floor(remainingMins/60)}h${remainingMins%60 > 0 ? ` ${remainingMins%60}m` : ''}` : `${remainingMins}m`;
               timedWeekendSlots.push({
                 time: formatMinutesTo12h(currentMins),
@@ -1691,11 +1695,13 @@ export default function App() {
     const startDiff = settings.schoolDayStartTime !== planSettings.schoolDayStartTime;
     const bedtimeDiff = settings.bedtime !== planSettings.bedtime;
     const hoursDiff = settings.weekendAvailableHours !== planSettings.weekendAvailableHours;
+    const schoolModeDiff = settings.schoolMode !== planSettings.schoolMode;
+    const breakHoursDiff = settings.breakAvailableHours !== planSettings.breakAvailableHours;
     
     const daysDiff = settings.schoolDays.length !== planSettings.schoolDays.length ||
       !settings.schoolDays.every(d => planSettings.schoolDays.includes(d));
 
-    return startDiff || bedtimeDiff || hoursDiff || daysDiff;
+    return startDiff || bedtimeDiff || hoursDiff || daysDiff || schoolModeDiff || breakHoursDiff;
   };
 
   const getWeekendLimitViolations = () => {
@@ -2950,7 +2956,11 @@ export default function App() {
 
                 const currentDayMins = getGoalsAndChoresDuration(currentDayPlan);
                 const currentDayHours = Math.round((currentDayMins / 60) * 10) / 10;
-                const activeDayLimitExceeded = (day === 'Saturday' || day === 'Sunday') && (currentDayMins > settings.weekendAvailableHours * 60);
+                const isWeekdayInBreak = settings.schoolDays.includes(day) && (settings.schoolMode === false);
+                const dailyLimitMins = isWeekdayInBreak 
+                  ? (settings.breakAvailableHours ?? 6) * 60 
+                  : settings.weekendAvailableHours * 60;
+                const activeDayLimitExceeded = (!isSchoolDay) && (currentDayMins > dailyLimitMins);
 
                 return (
                   <>
