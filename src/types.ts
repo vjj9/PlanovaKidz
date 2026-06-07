@@ -36,6 +36,10 @@ export interface UserSettings {
   weekendAvailableHours: number;
   schoolDays: DayOfWeek[];
   bedtime: string;
+  sundaySetupReminder?: boolean;
+  sundaySetupReminderTime?: string;
+  schoolMode?: boolean;
+  breakAvailableHours?: number;
 }
 
 export interface PlanSlot {

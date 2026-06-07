@@ -1,5 +1,5 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
-import { DayOfWeek, WeeklyPlan, FixedClass } from '../types';
+import { DayOfWeek, WeeklyPlan, FixedClass, UserSettings } from '../types';
 
 const DAY_MAP: Record<DayOfWeek, number> = {
   'Sunday': 1,
@@ -32,7 +32,7 @@ export class NotificationService {
     }
   }
 
-  static async syncAllNotifications(fixedClasses: FixedClass[], plan: WeeklyPlan | null) {
+  static async syncAllNotifications(fixedClasses: FixedClass[], plan: WeeklyPlan | null, settings?: UserSettings) {
     try {
       // 1. Cancel ALL existing notifications first to start fresh
       const pending = await LocalNotifications.getPending();
@@ -108,7 +108,33 @@ export class NotificationService {
         });
       }
 
-      // 4. Batch schedule everything
+      // 4. Schedule Sunday Setup Reminder if enabled
+      if (settings && settings.sundaySetupReminder) {
+        const timeStr = settings.sundaySetupReminderTime || '18:00';
+        const timeParts = timeStr.split(':').map(Number);
+        if (timeParts.length === 2 && !isNaN(timeParts[0]) && !isNaN(timeParts[1])) {
+          const [hour, minute] = timeParts;
+          const id = this.generateId('sunday-setup-reminder');
+          notifications.push({
+            title: `⏰ Plan your exciting week ahead!`,
+            body: `It's Sunday evening. Open Planova Kidz to configure and set up your goals, classes, and tasks!`,
+            id,
+            schedule: {
+              on: {
+                weekday: 1, // Sunday
+                hour,
+                minute
+              },
+              repeats: true,
+              allowWhileIdle: true
+            },
+            sound: 'default',
+            actionTypeId: 'SUNDAY_SETUP_REMINDER'
+          });
+        }
+      }
+
+      // 5. Batch schedule everything
       if (notifications.length > 0) {
         console.log(`Planova Kidz: Syncing ${notifications.length} total notifications...`);
         await LocalNotifications.schedule({ notifications });
@@ -144,6 +170,13 @@ export class NotificationService {
           actions: [
             { id: 'done', title: 'Done!', foreground: true },
             { id: 'skip', title: 'Skip', destructive: true }
+          ]
+        },
+        {
+          id: 'SUNDAY_SETUP_REMINDER',
+          actions: [
+            { id: 'view', title: 'Set Up Now', foreground: true },
+            { id: 'dismiss', title: 'Dismiss', destructive: true }
           ]
         }
       ]

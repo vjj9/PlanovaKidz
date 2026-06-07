@@ -33,7 +33,8 @@ import {
   AlertTriangle,
   Play,
   Pause,
-  X
+  X,
+  Palmtree
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Type, ThinkingLevel, Modality } from "@google/genai";
@@ -79,6 +80,14 @@ const FIXED_CLASS_TIME_OPTIONS = (() => {
     for (let m = 0; m < 60; m += 30) {
       options.push(`${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`);
     }
+  }
+  return options;
+})();
+
+const SUNDAY_REMINDER_TIME_OPTIONS = (() => {
+  const options = [];
+  for (let h = 8; h < 22; h++) {
+    options.push(`${h.toString().padStart(2, '0')}:00`);
   }
   return options;
 })();
@@ -265,6 +274,10 @@ export default function App() {
     weekendAvailableHours: 4,
     schoolDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
     bedtime: '20:30',
+    sundaySetupReminder: true,
+    sundaySetupReminderTime: '18:00',
+    schoolMode: true,
+    breakAvailableHours: 6,
   });
   const [plan, setPlan] = useState<WeeklyPlan | null>(null);
   const [planSettings, setPlanSettings] = useState<UserSettings | null>(() => {
@@ -561,7 +574,15 @@ export default function App() {
         schoolDayStartTime: parsed.schoolDayStartTime || parsed.weekdayStartTime || '16:00',
         weekendAvailableHours: parsed.weekendAvailableHours || 4,
         schoolDays: parsed.schoolDays || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-        bedtime: parsed.bedtime || '20:30'
+        bedtime: parsed.bedtime || '20:30',
+        sundaySetupReminder: parsed.sundaySetupReminder !== undefined ? parsed.sundaySetupReminder : true,
+        sundaySetupReminderTime: parsed.sundaySetupReminderTime || '18:00',
+        schoolMode: parsed.schoolMode !== undefined 
+          ? parsed.schoolMode 
+          : (parsed.summerMode !== undefined ? !parsed.summerMode : true),
+        breakAvailableHours: parsed.breakAvailableHours !== undefined 
+          ? parsed.breakAvailableHours 
+          : (parsed.summerAvailableHours !== undefined ? parsed.summerAvailableHours : 6),
       });
     }
     if (savedPlan) {
@@ -613,7 +634,7 @@ export default function App() {
     }
     
     // Sync all notifications at once to prevent collisions
-    NotificationService.syncAllNotifications(fixedClasses, plan);
+    NotificationService.syncAllNotifications(fixedClasses, plan, settings);
   }, [userName, fixedClasses, practiceGoals, chores, settings, plan, planSettings]);
 
   // Stop the story if the user navigates away or starts planning
@@ -967,14 +988,61 @@ export default function App() {
         return;
       }
 
+      const isSchoolMode = settings.schoolMode !== false;
+      const breakLimitHours = settings.breakAvailableHours ?? 6;
+      const weekendLimitHours = settings.weekendAvailableHours;
+      const schoolStartTimeStr = format12h(settings.schoolDayStartTime);
+      const bedtimeStr = format12h(settings.bedtime);
+
+      const inputsSection = !isSchoolMode ? `
+        - Bedtime: ${bedtimeStr}
+        - School Break Weekdays (with Break schedule active): ${settings.schoolDays.join(', ')}
+        - Weekday MAX duration for GOALS and CHORES combined: ${breakLimitHours} hours per day.
+        - Weekend MAX duration for GOALS and CHORES combined: ${weekendLimitHours} hours per day.
+      ` : `
+        - Bedtime: ${bedtimeStr}
+        - School Days: ${settings.schoolDays.join(', ')}
+        - Start time (after school) on school days: ${schoolStartTimeStr}
+        - Weekend MAX duration for GOALS and CHORES combined: ${weekendLimitHours} hours per day.
+      `;
+
+      const planningRulesSection = !isSchoolMode ? `
+        1. STRICT REQUIREMENT: ONLY use activities provided above. DO NOT invent tasks like "Homework" or "Clean Room".
+        2. Break Weekday Scheduling:
+           - On active weekdays (${settings.schoolDays.join(', ')}), the child has relaxed days because school is out (e.g. Summer/Winter Break). Do NOT schedule a rigid continuous block from a weekday start time to Bedtime.
+           - LIMITS: On any of these weekdays, the sum of durations of all GOALS and CHORES combined MUST NOT exceed ${breakLimitHours} hours.
+           - Mark these weekday GOALS/CHORES as "isFlexible": true and leave out "time".
+           - List CLASSES and FIXED FREE TIME on weekdays at their specific times.
+        3. Weekend Scheduling (Saturday/Sunday):
+           - List CLASSES and FIXED FREE TIME at their specific times.
+           - LIMITS: On Saturday and Sunday, the sum of durations of all GOALS and CHORES combined MUST NOT exceed ${weekendLimitHours} hours per day.
+           - Mark these weekend GOALS/CHORES as "isFlexible": true and leave out "time".
+           - Do NOT exceed this weekend hours limit under any circumstance. Truncate or move tasks to weekdays to satisfy this.
+        4. Distribute goals and chores across the entire week to satisfy both weekday and weekend limits.
+      ` : `
+        1. STRICT REQUIREMENT: ONLY use activities provided above. DO NOT invent tasks like "Homework" or "Clean Room".
+        2. ENTIRE WINDOW: You MUST schedule the ENTIRE time from ${schoolStartTimeStr} to Bedtime (${bedtimeStr}) on school days. NO GAPS. Your schedule MUST be continuous.
+        3. START TIME: The first activity on a school day MUST start exactly at ${schoolStartTimeStr}. This is non-negotiable.
+        4. DURATION CALC: The total duration to account for is exactly ${
+          Math.round(((parseFloat(settings.bedtime.split(':')[0]) + parseFloat(settings.bedtime.split(':')[1])/60) - 
+          (parseFloat(settings.schoolDayStartTime.split(':')[0]) + parseFloat(settings.schoolDayStartTime.split(':')[1])/60)) * 100) / 100
+        } hours. The durations of your scheduled slots for that day MUST add up to this exact total.
+        5. SLOT TIMES: For school days, the 'time' field for each slot MUST be calculated based on the start time and preceding durations.
+        6. On Weekends: 
+           - List CLASSES and FIXED FREE TIME at their specific times.
+           - LIMITS: On Saturday, the sum of durations of all GOALS and CHORES combined MUST NOT exceed ${weekendLimitHours} hours.
+           - LIMITS: On Sunday, the sum of durations of all GOALS and CHORES combined MUST NOT exceed ${weekendLimitHours} hours.
+           - If there are many weekly goals or chores, distribute them onto school days (weekdays) after school hours to ensure that you STRICTLY stay below ${weekendLimitHours} hours per day on weekends.
+           - Do NOT exceed this weekend hours limit under any circumstance. Truncate or move tasks to weekdays to satisfy this.
+           - Mark these weekend GOALS/CHORES as "isFlexible": true and leave out "time".
+        7. NO GAPS: Use "Free Time ✨" (Timed) to fill ALL gaps between other activities. The day MUST be a continuous block from ${schoolStartTimeStr} to Bedtime.
+      `;
+
       const prompt = `
         Create a weekly schedule for a child.
         
         INPUTS:
-        - Bedtime: ${format12h(settings.bedtime)}
-        - School Days: ${settings.schoolDays.join(', ')}
-        - Start time (after school) on school days: ${format12h(settings.schoolDayStartTime)}
-        - Weekend MAX duration for GOALS and CHORES combined: ${settings.weekendAvailableHours} hours per day.
+        ${inputsSection}
         
         ACTIVITIES TO SCHEDULE:
         - CLASSES (Fixed Time): ${fixedClasses.map(c => `${c.name} on ${c.days.join(', ')} at ${format12h(c.startTime)} (${c.duration})`).join('; ')}
@@ -983,29 +1051,14 @@ export default function App() {
         - CHORES (to fit in): ${chores.map(c => `${c.name} (${c.duration}, ${c.frequency})`).join('; ')}
         
         PLANNING RULES:
-        1. STRICT REQUIREMENT: ONLY use activities provided above. DO NOT invent tasks like "Homework" or "Clean Room".
-        2. ENTIRE WINDOW: You MUST schedule the ENTIRE time from ${format12h(settings.schoolDayStartTime)} to Bedtime (${format12h(settings.bedtime)}) on school days. NO GAPS. Your schedule MUST be continuous.
-        3. START TIME: The first activity on a school day MUST start exactly at ${format12h(settings.schoolDayStartTime)}. This is non-negotiable.
-        4. DURATION CALC: The total duration to account for is exactly ${
-          Math.round(((parseFloat(settings.bedtime.split(':')[0]) + parseFloat(settings.bedtime.split(':')[1])/60) - 
-          (parseFloat(settings.schoolDayStartTime.split(':')[0]) + parseFloat(settings.schoolDayStartTime.split(':')[1])/60)) * 100) / 100
-        } hours. The durations of your scheduled slots for that day MUST add up to this exact total.
-        5. SLOT TIMES: For school days, the 'time' field for each slot MUST be calculated based on the start time and preceding durations.
-        6. On Weekends: 
-           - List CLASSES and FIXED FREE TIME at their specific times.
-           - LIMITS: On Saturday, the sum of durations of all GOALS and CHORES combined MUST NOT exceed ${settings.weekendAvailableHours} hours.
-           - LIMITS: On Sunday, the sum of durations of all GOALS and CHORES combined MUST NOT exceed ${settings.weekendAvailableHours} hours.
-           - If there are many weekly goals or chores, distribute them onto school days (weekdays) after school hours to ensure that you STRICTLY stay below ${settings.weekendAvailableHours} hours per day on weekends.
-           - Do NOT exceed this weekend hours limit under any circumstance. Truncate or move tasks to weekdays to satisfy this.
-           - Mark these weekend GOALS/CHORES as "isFlexible": true and leave out "time".
-        7. NO GAPS: Use "Free Time ✨" (Timed) to fill ALL gaps between other activities. The day MUST be a continuous block from ${format12h(settings.schoolDayStartTime)} to Bedtime.
-        8. GOAL AND CHORE SPLITTING (IMPORTANT):
+        ${planningRulesSection}
+        5. GOAL AND CHORE SPLITTING (IMPORTANT):
            - Kids have short attention spans. If any GOAL or CHORE has a total duration of 1 hour or more per week (e.g., "1h", "1h 15m", "1h 30m", "2h", "3h") and a frequency like "Weekly" or "2x week", "3x week", "4x week" - you MUST NOT schedule it as a single huge block on a single day.
            - Instead, split this weekly duration into smaller, kid-friendly session lengths (e.g., 15m, 20m, 30m, or 45m) and distribute them across multiple different days of the week.
            - For example, "Piano Practice (1h 30m, Weekly / 3x week)" must be split and scheduled as three separate 30-minute sessions or two separate 45-minute sessions on different days of the week.
            - Keep the activity name EXACTLY identical across all occurrences (e.g. "Piano Practice"). DO NOT append part numbers, suffixes (like "Part 1" or "(Split)") or change the spelling, so they map back to user terms perfectly.
            - Ensure the sum of the split session durations over the course of the week equals the original target total duration (e.g., three 30m sessions sum to exactly 1h 30m).
-        9. Return ONLY valid JSON.
+        6. Return ONLY valid JSON.
         
         JSON Schema:
         {
@@ -1113,7 +1166,7 @@ export default function App() {
 
       if (result.days) {
         result.days = result.days.map((day: any) => {
-          const isSchoolDay = settings.schoolDays.includes(day.day as DayOfWeek);
+          const isSchoolDay = settings.schoolDays.includes(day.day as DayOfWeek) && (settings.schoolMode !== false);
           
           let daySlots = day.slots || [];
           
@@ -1157,7 +1210,9 @@ export default function App() {
             ];
 
             // 3. Build the perfect timed weekend schedule using our algorithm
-            const limitMins = settings.weekendAvailableHours * 60;
+            const isWeekDay = settings.schoolDays.includes(dayName);
+            const dailyLimitHours = (isWeekDay && settings.schoolMode === false) ? (settings.breakAvailableHours ?? 6) : settings.weekendAvailableHours;
+            const limitMins = dailyLimitHours * 60;
             
             const parseTime = (t: string) => {
               const match = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
@@ -1814,7 +1869,7 @@ export default function App() {
             </div>
             <div className="relative space-y-6">
               {(() => {
-                const isSchoolDay = settings.schoolDays.includes(today);
+                const isSchoolDay = settings.schoolDays.includes(today) && (settings.schoolMode !== false);
                 const daySlots = todayPlan?.slots || [];
                 const startTime24 = isSchoolDay ? settings.schoolDayStartTime : getWeekendStartTime24(daySlots);
                 const timedSlots = daySlots.filter(slot => {
@@ -1912,29 +1967,109 @@ export default function App() {
 
       {/* Times */}
       <section className="space-y-6">
-        <div className="flex items-center gap-2 text-rose-600">
+        {/* School Mode Toggle */}
+        <div className="bg-gradient-to-r from-indigo-50 to-rose-50/50 p-6 rounded-3xl border-2 border-indigo-100 shadow-sm space-y-3 transition-all hover:border-indigo-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-indigo-100 rounded-2xl text-indigo-600 shadow-inner">
+                <BookOpen className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <h4 className="font-black text-slate-800 text-sm tracking-wide uppercase">School Mode 🏫</h4>
+                <p className="text-[11px] font-semibold text-slate-500 leading-tight">
+                  {settings.schoolMode !== false 
+                    ? "Currently in School Term! Automatically schedules continuous after-school slots." 
+                    : "School is out! Relaxed schedule is active for Summer, Winter, Thanksgiving, or Spring breaks."}
+                </p>
+              </div>
+            </div>
+            <button 
+              type="button"
+              onClick={() => setSettings({ ...settings, schoolMode: settings.schoolMode === false ? true : false })}
+              className={`w-12 h-7 rounded-full transition-all relative shrink-0 ${settings.schoolMode !== false ? 'bg-indigo-600 shadow-lg shadow-indigo-100' : 'bg-slate-200'}`}
+            >
+              <div 
+                className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.schoolMode !== false ? 'translate-x-5' : ''}`}
+              />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 text-rose-600 pt-2">
           <Clock className="w-5 h-5" />
           <h3 className="font-bold text-lg">Availability</h3>
         </div>
-        
+
+        <div className="bg-white p-6 rounded-3xl border-2 border-rose-50 shadow-sm space-y-4 transition-all hover:border-rose-200 hover:shadow-md">
+          <label className="text-sm font-black text-rose-400 uppercase flex items-center gap-2 tracking-widest">
+            <Calendar className="w-4 h-4" /> {settings.schoolMode === false ? "Week (Break) Days" : "School Days"}
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {DAYS.map(d => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => {
+                  if (settings.schoolDays.includes(d)) {
+                    setSettings({...settings, schoolDays: settings.schoolDays.filter(day => day !== d)});
+                  } else {
+                    setSettings({...settings, schoolDays: [...settings.schoolDays, d]});
+                  }
+                }}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
+                  settings.schoolDays.includes(d) 
+                    ? 'bg-rose-500 text-white shadow-lg shadow-rose-100 scale-105' 
+                    : 'bg-white text-rose-400 border-2 border-rose-50 hover:border-rose-200'
+                }`}
+              >
+                {d.slice(0, 3)}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="space-y-4">
           <label className="text-xs font-black text-rose-400 uppercase flex items-center gap-2 tracking-widest">
-            <Sun className="w-4 h-4" /> School Day Availability
+            <Sun className="w-4 h-4" /> {settings.schoolMode === false ? "Break Day Availability" : "School Day Availability"}
           </label>
           <div className="bg-white p-6 rounded-3xl border-2 border-rose-50 shadow-sm space-y-3 transition-all hover:border-rose-200 hover:shadow-md">
-            <span className="text-sm font-black text-rose-400 uppercase block tracking-widest">Available from (Evening)</span>
-            <div className="relative">
-              <select 
-                value={settings.schoolDayStartTime}
-                onChange={(e) => setSettings({ ...settings, schoolDayStartTime: e.target.value })}
-                className="w-full font-black text-2xl bg-transparent focus:outline-none text-rose-600 cursor-pointer appearance-none pr-8"
-              >
-                {TIME_OPTIONS.map(time => (
-                  <option key={time} value={time}>{format12h(time)}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-0 top-1/2 -translate-y-1/2 w-5 h-5 text-rose-300 pointer-events-none" />
-            </div>
+            {settings.schoolMode === false ? (
+              <>
+                <span className="text-sm font-black text-rose-400 uppercase block tracking-widest">Hours per day (Mon–Fri)</span>
+                <div className="flex items-center gap-4">
+                  <input 
+                    type="range" 
+                    min="1" 
+                    max="12" 
+                    step="0.5"
+                    value={settings.breakAvailableHours ?? 6}
+                    onChange={(e) => setSettings({ ...settings, breakAvailableHours: parseFloat(e.target.value) })}
+                    className="flex-1 accent-rose-500"
+                  />
+                  <span className="text-2xl font-black text-rose-600 min-w-[60px]">{settings.breakAvailableHours ?? 6}h</span>
+                </div>
+                <p className="text-[10px] text-slate-400 font-medium leading-relaxed pt-1 flex items-start gap-1.5 border-t border-rose-50/50 mt-1">
+                  <span className="text-rose-400">💡</span>
+                  <span>When School Mode is off (Break Mode), the AI planner will limit the combined chores and practice goals on weekdays to {settings.breakAvailableHours ?? 6} hours.</span>
+                </p>
+              </>
+            ) : (
+              <>
+                <span className="text-sm font-black text-rose-400 uppercase block tracking-widest">Available from (Evening)</span>
+                <div className="relative">
+                  <select 
+                    value={settings.schoolDayStartTime}
+                    onChange={(e) => setSettings({ ...settings, schoolDayStartTime: e.target.value })}
+                    className="w-full font-black text-2xl bg-transparent focus:outline-none text-rose-600 cursor-pointer appearance-none pr-8"
+                  >
+                    {TIME_OPTIONS.map(time => (
+                      <option key={time} value={time}>{format12h(time)}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-0 top-1/2 -translate-y-1/2 w-5 h-5 text-rose-300 pointer-events-none" />
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -1983,32 +2118,43 @@ export default function App() {
           </div>
         </div>
 
+      
         <div className="bg-white p-6 rounded-3xl border-2 border-rose-50 shadow-sm space-y-4 transition-all hover:border-rose-200 hover:shadow-md">
-          <label className="text-sm font-black text-rose-400 uppercase flex items-center gap-2 tracking-widest">
-            <Calendar className="w-4 h-4" /> School Days
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {DAYS.map(d => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => {
-                  if (settings.schoolDays.includes(d)) {
-                    setSettings({...settings, schoolDays: settings.schoolDays.filter(day => day !== d)});
-                  } else {
-                    setSettings({...settings, schoolDays: [...settings.schoolDays, d]});
-                  }
-                }}
-                className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${
-                  settings.schoolDays.includes(d) 
-                    ? 'bg-rose-500 text-white shadow-lg shadow-rose-100 scale-105' 
-                    : 'bg-white text-rose-400 border-2 border-rose-50 hover:border-rose-200'
-                }`}
-              >
-                {d.slice(0, 3)}
-              </button>
-            ))}
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-black text-rose-400 uppercase flex items-center gap-2 tracking-widest">
+              <Bell className="w-4 h-4" /> Next Week's Setup Reminder
+            </label>
+            <button 
+              type="button"
+              onClick={() => setSettings({ ...settings, sundaySetupReminder: !settings.sundaySetupReminder })}
+              className={`w-12 h-7 rounded-full transition-all relative ${settings.sundaySetupReminder ? 'bg-rose-500' : 'bg-slate-200'}`}
+            >
+              <div 
+                className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.sundaySetupReminder ? 'translate-x-5' : ''}`}
+              />
+            </button>
           </div>
+          
+          {settings.sundaySetupReminder && (
+            <div className="space-y-3 pt-3 border-t border-rose-50/50">
+              <span className="text-xs font-black text-rose-400 uppercase block tracking-widest">Reminder Time</span>
+              <div className="relative">
+                <select 
+                  value={settings.sundaySetupReminderTime}
+                  onChange={(e) => setSettings({ ...settings, sundaySetupReminderTime: e.target.value })}
+                  className="w-full font-black text-2xl bg-transparent focus:outline-none text-rose-600 cursor-pointer appearance-none pr-8"
+                >
+                  {SUNDAY_REMINDER_TIME_OPTIONS.map(time => (
+                    <option key={time} value={time}>{format12h(time)}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-0 top-1/2 -translate-y-1/2 w-5 h-5 text-rose-300 pointer-events-none" />
+              </div>
+              <p className="text-[10px] text-slate-400 font-semibold leading-relaxed">
+                Receive an automatic weekly reminder on Sunday evening to configure and set up your goals, classes, and activities for the week!
+              </p>
+            </div>
+          )}
         </div>
       </section>
     </motion.div>
@@ -2728,25 +2874,6 @@ export default function App() {
         </motion.div>
       )}
 
-      {getWeekendLimitViolations().map(violation => (
-        <motion.div 
-          key={violation.day}
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-red-50 border-2 border-red-200 p-4 rounded-3xl flex items-start gap-3 shadow-sm"
-        >
-          <div className="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center shrink-0">
-            <AlertTriangle className="w-5 h-5 text-red-600" />
-          </div>
-          <div className="flex-1 space-y-1">
-            <h4 className="font-black text-red-950 text-xs uppercase tracking-wider">{violation.day} Limit Exceeded ⚠️</h4>
-            <p className="text-[11px] text-red-800 leading-relaxed font-semibold">
-              Goals and chores scheduled on {violation.day} total <span className="text-red-950 font-black">{violation.hours} hours</span>, which exceeds your set limit of <span className="text-red-950 font-black">{violation.limit} hours</span>.
-            </p>
-          </div>
-        </motion.div>
-      ))}
-
       {(() => {
         const today = new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date()) as DayOfWeek;
         const dayOrder = DAYS;
@@ -2801,7 +2928,7 @@ export default function App() {
             >
               {(() => {
                 const day = currentDayPlan.day as DayOfWeek;
-                const isSchoolDay = settings.schoolDays.includes(day);
+                const isSchoolDay = settings.schoolDays.includes(day) && (settings.schoolMode !== false);
                 const timedSlots = currentDayPlan.slots.filter(slot => {
                   if (slot.isFlexible) return false;
                   if (!slot.time) return false;
@@ -2827,24 +2954,6 @@ export default function App() {
 
                 return (
                   <>
-                    {(day === 'Saturday' || day === 'Sunday') && (
-                      <div className={`p-4 rounded-3xl flex items-center justify-between border-2 mb-4 transition-all ${
-                        activeDayLimitExceeded 
-                          ? 'bg-red-50 border-red-200 text-red-800' 
-                          : 'bg-slate-50 border-slate-100 text-slate-700'
-                      }`}>
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className={`w-4 h-4 shrink-0 ${activeDayLimitExceeded ? 'text-red-600 animate-pulse' : 'text-slate-400'}`} />
-                          <span className="text-[10px] font-black uppercase tracking-wider">
-                            {activeDayLimitExceeded ? 'Weekend limit exceeded!' : 'Weekend workload'}
-                          </span>
-                        </div>
-                        <span className={`text-xs font-black font-mono px-2 py-0.5 rounded-full ${activeDayLimitExceeded ? 'bg-red-100 text-red-700' : 'bg-slate-200 text-slate-700'}`}>
-                          {currentDayHours}h / {settings.weekendAvailableHours}h Max
-                        </span>
-                      </div>
-                    )}
-
                     {/* Timed Activities */}
                     <div className="space-y-3">
                       {timedSlots.map((slot, sIdx) => {
