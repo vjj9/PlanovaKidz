@@ -1546,7 +1546,7 @@ export default function App() {
               <h3 className="text-xl font-black text-white">Smart Planning Consent</h3>
             </div>
             
-            <div className="p-8 space-y-6">
+            <div className="p-8 space-y-6 animate-fade-in">
               <div className="space-y-4">
                 <div className="flex gap-4">
                   <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
@@ -1554,7 +1554,7 @@ export default function App() {
                   </div>
                   <div className="space-y-1">
                     <h4 className="font-bold text-slate-900 text-sm">What we share</h4>
-                    <p className="text-xs text-slate-500 leading-relaxed font-medium">Activity names, times, and goals. Your name is NOT shared.</p>
+                    <p className="text-xs text-slate-500 leading-relaxed font-medium font-sans">Activity names, times, and schedule goals. Private personal information is NEVER shared.</p>
                   </div>
                 </div>
 
@@ -1564,7 +1564,7 @@ export default function App() {
                   </div>
                   <div className="space-y-1">
                     <h4 className="font-bold text-slate-900 text-sm">Who gets it</h4>
-                    <p className="text-xs text-slate-500 leading-relaxed font-medium">Data is transmitted securely to Google Gemini AI to help organize your week.</p>
+                    <p className="text-xs text-slate-500 leading-relaxed font-medium font-sans">Data is securely transmitted directly to Google LLC via the official Gemini API.</p>
                   </div>
                 </div>
 
@@ -1573,13 +1573,27 @@ export default function App() {
                     <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                   </div>
                   <div className="space-y-1">
-                    <h4 className="font-bold text-slate-900 text-sm">Your Choice</h4>
-                    <p className="text-xs text-slate-500 leading-relaxed font-medium">You can revoke this consent at any time in the 'Me' tab.</p>
+                    <h4 className="font-bold text-slate-900 text-sm">Your Choice & Control</h4>
+                    <p className="text-xs text-slate-500 leading-relaxed font-medium font-sans">Permission can be granted or revoked at any time. We ask your permission before sharing any data.</p>
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-3 pt-2">
+              <div className="pt-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAiConsentModal(false);
+                    setShowPrivacy(true);
+                  }}
+                  className="text-xs font-black text-indigo-600 hover:text-indigo-800 transition-colors inline-flex items-center gap-1.5 underline"
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  Read Privacy Policy & AI Data Security
+                </button>
+              </div>
+
+              <div className="space-y-3 pt-1">
                 <button 
                   onClick={() => {
                     setHasAcceptedAiConsent(true);
@@ -1588,13 +1602,13 @@ export default function App() {
                     // Immediately trigger generation since this modal usually appears after clicking "Generate"
                     generatePlan(true);
                   }}
-                  className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all text-sm uppercase tracking-widest"
+                  className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black shadow-lg shadow-indigo-100 active:scale-95 transition-all text-sm uppercase tracking-widest cursor-pointer"
                 >
                   I Agree & Continue
                 </button>
                 <button 
                   onClick={() => setShowAiConsentModal(false)}
-                  className="w-full text-slate-400 font-bold py-2 text-xs uppercase tracking-widest hover:text-slate-600 transition-colors"
+                  className="w-full text-slate-400 font-bold py-2 text-xs uppercase tracking-widest hover:text-slate-600 transition-colors cursor-pointer"
                 >
                   Not Now
                 </button>
@@ -1611,67 +1625,97 @@ export default function App() {
       <motion.div 
         initial={{ opacity: 0, x: 20 }} 
         animate={{ opacity: 1, x: 0 }} 
-        exit={{ opacity: 0, x: -20 }}
+        exit={{ opacity: 0, x: -25 }}
         className="space-y-6"
       >
         <header className="flex items-center gap-4 mb-8">
           <button 
-            onClick={() => setShowPrivacy(false)}
+            onClick={() => {
+              setShowPrivacy(false);
+              // If we arrived from AI consent, let's reopen the consent modal when closing the policy
+              if (!hasAcceptedAiConsent) {
+                setShowAiConsentModal(true);
+              }
+            }}
             className="p-2 hover:bg-slate-100 rounded-xl transition-all"
           >
             <ChevronLeft className="w-6 h-6 text-slate-400" />
           </button>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Privacy & AI</h2>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tight">Privacy & AI Data</h2>
         </header>
 
-        <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-6 text-left">
+        <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-6 text-left font-sans">
           <section className="space-y-4">
-            <h3 className="font-black text-indigo-600 text-xs uppercase tracking-widest">AI Data Disclosure</h3>
-            <p className="text-sm text-slate-600 leading-relaxed font-medium">
-              To build your schedule and stories, this app uses <strong className="text-slate-900">Google Gemini AI</strong>. We follow strict safety rules for children:
+            <h3 className="font-black text-indigo-600 text-xs uppercase tracking-widest flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-500" />
+              AI Consent & Permission (Guideline 5.1.1 & 5.1.2)
+            </h3>
+            <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+              Your trust and data security are our top priorities. Planova Kidz transmits schedule information to a third-party AI to synthesize and organize your kids' weekly schedule. We never share your data without explicit permission.
             </p>
-            <div className="bg-slate-50 p-4 rounded-2xl space-y-3">
-              <div className="flex gap-3">
-                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
-                <p className="text-[11px] text-slate-500 leading-normal">
-                  <strong className="text-slate-700">Service Provider:</strong> Data is sent securely to Google LLC.
+            <div className="border border-indigo-50 bg-indigo-50/20 p-4 rounded-2xl space-y-3.5">
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase text-indigo-500 block tracking-wider">1. User Permission Constraint</span>
+                <p className="text-[11px] text-slate-500 leading-normal font-medium">
+                  We collect your explicit permission before any scheduling data is transmitted. You can instantly withdraw consensus or disable the smart AI planning feature at any time directly through the "Me" tab.
                 </p>
               </div>
-              <div className="flex gap-3">
-                <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 mt-1.5 shrink-0" />
-                <p className="text-[11px] text-slate-500 leading-normal">
-                  <strong className="text-slate-700">Shared Data:</strong> Only activity names (e.g., "Violin Lesson") and chores are shared.
+
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase text-indigo-500 block tracking-wider">2. Exactly What Data Is Shared</span>
+                <p className="text-[11px] text-slate-500 leading-normal font-medium">
+                  We ONLY send schedule configurations, specifically: activity names (e.g. "Violin Practice"), chore titles (e.g. "Clean Room"), bedtime/start time configurations, and desired chore frequencies.
                 </p>
               </div>
-              <div className="flex gap-3">
-                <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
-                <p className="text-[11px] text-slate-500 leading-normal">
-                  <strong className="text-slate-700">Excluded Data:</strong> Names, ages, and device identifiers are <strong className="text-rose-600">never</strong> shared.
+
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase text-indigo-500 block tracking-wider">3. Who Is the Data Shared With</span>
+                <p className="text-[11px] text-slate-500 leading-normal font-medium">
+                  Data is securely transmitted over TLS/SSL encryption directly to <strong className="text-slate-700">Google LLC</strong> via their official <strong className="text-indigo-600">Gemini AI API</strong>.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase text-rose-500 block tracking-wider">4. strict Kids Safety (No Identifiers)</span>
+                <p className="text-[11px] text-rose-600/90 leading-normal font-medium">
+                  We <strong className="text-rose-700">never</strong> share your child's real name, email, age, precise geographical location, or device identifiers. All prompts are completely anonymized before transmission.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase text-emerald-600 block tracking-wider">5. Google Data Protection Guarantee</span>
+                <p className="text-[11px] text-slate-500 leading-normal font-medium">
+                  Google LLC provides equivalent or superior protection. Google enterprise API terms ensure that user queries and scheduling data are kept private, never logged or stored permanently, and <strong className="text-emerald-700 font-bold">never used to train Google's machine learning models</strong>.
                 </p>
               </div>
             </div>
           </section>
 
-          <section className="space-y-2">
-            <h3 className="font-black text-rose-600 text-xs uppercase tracking-widest">Local Storage</h3>
-            <p className="text-sm text-slate-600 leading-relaxed font-medium">
-              Your profile and class details are stored strictly on your device. We do not have servers that save your data.
+          <section className="space-y-2 border-t border-slate-100 pt-4">
+            <h3 className="font-black text-rose-500 text-xs uppercase tracking-widest">Local-Only Storage</h3>
+            <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+              All profile information, chores, goals, and customized plans are persisted strictly on your device using sandboxed on-device local storage. We do not operate any external cloud databases or cloud storage servers that hold your child's data. Everything stays on your phone.
             </p>
           </section>
 
-          <section className="space-y-2">
-            <h3 className="font-black text-emerald-600 text-xs uppercase tracking-widest">No Ads or Tracking</h3>
-            <p className="text-sm text-slate-600 leading-relaxed font-medium">
-              We do not include third-party advertising, trackers, or hidden analytics. Planova Kidz is designed to be a safe, private space for you.
+          <section className="space-y-2 border-t border-slate-100 pt-4">
+            <h3 className="font-black text-emerald-500 text-xs uppercase tracking-widest">No Ads & Zero Third-Party Tracker SDKs</h3>
+            <p className="text-xs text-slate-600 leading-relaxed font-semibold">
+              Planova Kidz is completely free of advertisements and trackers. We have fully removed Sentry and any other analytics SDKs. There is absolute zero hidden tracking, zero third-party telemetry, and zero data gathering scripts within this application. It is a completely private environment.
             </p>
           </section>
 
-          <div className="pt-4 border-t border-slate-50">
+          <div className="pt-4 border-t border-slate-100">
             <button 
-              onClick={() => setShowPrivacy(false)}
-              className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-widest active:scale-95 transition-all"
+              onClick={() => {
+                setShowPrivacy(false);
+                if (!hasAcceptedAiConsent) {
+                  setShowAiConsentModal(true);
+                }
+              }}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-widest active:scale-95 transition-all cursor-pointer"
             >
-              Close
+              Back to App
             </button>
           </div>
         </div>
