@@ -93,6 +93,11 @@ workflows:
           echo "Forcing Bundle ID: com.planovakidz.app"
           find ios/App/App.xcodeproj -name "project.pbxproj" -exec sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = .*;/PRODUCT_BUNDLE_IDENTIFIER = com.planovakidz.app;/g' {} +
           
+          # Force the plist display name in the Xcode build settings (Aggressive mode)
+          echo "Forcing App Display Name in Xcode project settings"
+          find ios/App/App.xcodeproj -name "project.pbxproj" -exec sed -i '' 's/INFOPLIST_KEY_CFBundleDisplayName = .*/INFOPLIST_KEY_CFBundleDisplayName = "Planova Kidz";/g' {} +
+          find ios/App/App.xcodeproj -name "project.pbxproj" -exec sed -i '' 's/INFOPLIST_KEY_CFBundleName = .*/INFOPLIST_KEY_CFBundleName = "Planova Kidz";/g' {} +
+          
           # Fix Export Compliance (ITSAppUsesNonExemptEncryption) to avoid manual steps in App Store Connect
           echo "Setting Export Compliance and App Name in Info.plist..."
           PLIST="ios/App/App/Info.plist"
