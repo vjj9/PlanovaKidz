@@ -99,19 +99,26 @@ workflows:
           find ios/App/App.xcodeproj -name "project.pbxproj" -exec sed -i '' 's/INFOPLIST_KEY_CFBundleName = .*/INFOPLIST_KEY_CFBundleName = "Planova Kidz";/g' {} +
           
           # Fix Export Compliance (ITSAppUsesNonExemptEncryption) to avoid manual steps in App Store Connect
-          echo "Setting Export Compliance and App Name in Info.plist..."
+          echo "Setting Export Compliance, App Name, and Versioning in Info.plist..."
           PLIST="ios/App/App/Info.plist"
+          VERSION_NAME=$(node -p "require('./package.json').version")
+          BUILD_NUMBER=$(date +%s)
+          
           if [ -f "$PLIST" ]; then
             /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Set :ITSAppUsesNonExemptEncryption false" "$PLIST"
             
             # Force the display name below the App Icon on the Home Screen to "Planova Kidz"
             /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 'Planova Kidz'" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 'Planova Kidz'" "$PLIST"
             /usr/libexec/PlistBuddy -c "Set :CFBundleName 'Planova Kidz'" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleName string 'Planova Kidz'" "$PLIST"
+            
+            # Sync plist version strings as fallback
+            /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString '$VERSION_NAME'" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string '$VERSION_NAME'" "$PLIST"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleVersion '$BUILD_NUMBER'" "$PLIST" 2>/dev/null || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string '$BUILD_NUMBER'" "$PLIST"
           fi
 
-          # Increment build number based on timestamp to ensure unique builds
-          BUILD_NUMBER=$(date +%s)
-          echo "Setting Build Number to $BUILD_NUMBER"
+          # Increment build number and set Marketing Version based on package.json to ensure unique, valid builds
+          echo "Setting Marketing Version to $VERSION_NAME and Build Number to $BUILD_NUMBER"
+          find ios/App/App.xcodeproj -name "project.pbxproj" -exec sed -i '' "s/MARKETING_VERSION = .*;/MARKETING_VERSION = $VERSION_NAME;/g" {} +
           find ios/App/App.xcodeproj -name "project.pbxproj" -exec sed -i '' "s/CURRENT_PROJECT_VERSION = .*;/CURRENT_PROJECT_VERSION = $BUILD_NUMBER;/g" {} +
 
           # Inspect the Provisioning Profile to see what ID it expects
