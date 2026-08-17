@@ -1015,44 +1015,36 @@ export default function App() {
       `;
 
       const planningRulesSection = !isSchoolMode ? `
-        1. STRICT REQUIREMENT: ONLY use activities provided above. DO NOT invent tasks like "Homework" or "Clean Room".
-        2. STRICT DURATIONS AND AVAILABLE HOURS LIMITS:
-           - On Break Weekdays, the TOTAL scheduled duration of ALL slots combined (Goals + Chores + Classes + Free Time) MUST NOT exceed the Daily limit of ${breakLimitHours} hours per day (unless the sum of user's fixed classes already exceeds this limit).
-           - On Weekend Days (Saturday/Sunday), the TOTAL scheduled duration of ALL slots combined (Goals + Chores + Classes + Free Time) MUST NOT exceed the Daily limit of ${weekendLimitHours} hours per day (unless the sum of user's fixed classes already exceeds this limit).
-           - DO NOT pad the day's schedule with "Free Time ✨" or stretch it to Bedtime if doing so would cause the day's total scheduled time to exceed the ${breakLimitHours} hour (weekdays) or ${weekendLimitHours} hour (weekends) limit. Bedtime is only the latest possible curfew time, NOT a target to fill.
-           - DO NOT stretch, pad, or lengthen the duration of Goals or Chores. If a goal duration is "30m", EVERY scheduled session of it MUST be exactly "30m" and never longer (e.g., do not make it 1h, 2h, 3h, etc.).
-           - DO NOT schedule more occurrences or repeat goals/chores beyond their specified frequency. E.g. if frequency is "1x week", schedule it only once.
-        3. Break Weekday Scheduling:
-           - On active weekdays (${settings.schoolDays.join(', ')}), schedule GOALS, CHORES, CLASSES, and FIXED FREE TIME starting at or after 10:00 AM.
-           - Keep the total time scheduled for the day (all slots combined) STRICTLY within ${breakLimitHours} hours. DO NOT add extra Free Time to fill the entire day to Bedtime.
-        4. Weekend Scheduling (Saturday/Sunday):
-           - Schedule classes at their exact specified times.
-           - Schedule GOALS and CHORES at realistic, specific times starting at or after 10:00 AM.
-           - Keep the total time scheduled for the day (all slots combined) STRICTLY within ${weekendLimitHours} hours. DO NOT add extra Free Time to fill the entire day to Bedtime.
-        5. Distribute goals and chores across the entire week to satisfy both weekday and weekend limits.
-        6. Every slot MUST have "isFlexible": false and have a realistic, exact "time" field (no blank times!).
-        7. Do NOT start any day before 10:00 AM unless there is an explicit FIXED CLASS or FIXED FREE TIME that has been specified by the user to start earlier. First slot of the day must be at 10:00 AM or after.
+        1. STRICT REQUIREMENT: ONLY use activities provided in the lists above. DO NOT invent unlisted tasks like "Homework" or "Clean Room".
+        2. MANDATORY FIXED CLASS & FIXED FREE TIME LOCKING:
+           - Every Class and Fixed Free Time MUST start at its EXACT designated startTime and run for its EXACT designated duration.
+           - For example, if "Cricket" is on Monday at 6:00 PM (2h), it MUST start at 6:00 PM and end at 8:00 PM. NEVER move it earlier (such as 5:30 PM) or alter its duration!
+        3. STRICT DURATIONS AND AVAILABLE HOURS LIMITS:
+           - Keep the total time scheduled for GOALS, CHORES, and CLASSES strictly within ${breakLimitHours} hours on break weekdays and ${weekendLimitHours} hours on weekend days.
+           - Each scheduled session of a Goal or Chore MUST have its exact configured duration (e.g., if a goal duration is "30m", EVERY session of it must be exactly "30m", not 15m or 1h).
+           - DO NOT automatically add extra "Free Time ✨" gap-filling slots on break weekdays or weekends. Only schedule the explicit activities requested by the user.
+        4. Distribute goals and chores across the active days to satisfy the daily limits and their requested weekly frequency.
+        5. Every slot MUST have "isFlexible": false and have a realistic, exact "time" field (no blank times!).
+        6. Do NOT start any day before 10:00 AM unless there is an explicit FIXED CLASS or FIXED FREE TIME that has been specified by the user to start earlier.
       ` : `
-        1. STRICT REQUIREMENT: ONLY use activities provided above. DO NOT invent tasks like "Homework" or "Clean Room".
-        2. STRICT DURATIONS AND AVAILABLE HOURS LIMITS:
-           - On Weekend Days (Saturday/Sunday), the TOTAL scheduled duration of ALL slots combined (Goals + Chores + Classes + Free Time) MUST NOT exceed the Daily limit of ${weekendLimitHours} hours per day (unless the sum of user's fixed classes already exceeds this limit).
-           - DO NOT pad the weekend schedule with extra "Free Time ✨" to fill the entire day to Bedtime. Bedtime is only the latest possible curfew, NOT a target to fill. On weekends, the entire scheduled day (the sum of all slots) should be at most ${weekendLimitHours} hours.
-           - DO NOT stretch, pad, or lengthen the duration of Goals or Chores. If a goal duration is "30m", EVERY scheduled session of it MUST be exactly "30m" and never longer (e.g., do not make it 1h, 2h, 3h, etc.).
-           - DO NOT schedule more occurrences or repeat goals/chores beyond their specified frequency.
-        3. ENTIRE WINDOW (ONLY FOR SCHOOL DAYS): You MUST schedule the ENTIRE time from ${schoolStartTimeStr} to Bedtime (${bedtimeStr}) on school days. NO GAPS. Your schedule MUST be continuous. On school days, use "Free Time ✨" (Timed) to fill all gaps.
-        4. START TIME (ONLY FOR SCHOOL DAYS): The first activity on a school day MUST start exactly at ${schoolStartTimeStr}. This is non-negotiable.
-        5. DURATION CALC (ONLY FOR SCHOOL DAYS): The total duration to account for is exactly ${
-          Math.round(((parseFloat(settings.bedtime.split(':')[0]) + parseFloat(settings.bedtime.split(':')[1])/60) - 
-          (parseFloat(settings.schoolDayStartTime.split(':')[0]) + parseFloat(settings.schoolDayStartTime.split(':')[1])/60)) * 100) / 100
-        } hours. The durations of your scheduled slots for that day MUST add up to this exact total.
-        6. SLOT TIMES: For school days, the 'time' field for each slot MUST be calculated based on the start time and preceding durations.
-        7. On Weekends (Saturday/Sunday): 
+        1. STRICT REQUIREMENT: ONLY use activities provided in the lists above. DO NOT invent unlisted tasks like "Homework" or "Clean Room".
+        2. MANDATORY FIXED CLASS & FIXED FREE TIME LOCKING:
+           - Every Class and Fixed Free Time MUST start at its EXACT designated startTime and run for its EXACT designated duration.
+           - For example, if "Cricket" is on Monday at 6:00 PM (2h), it MUST start at 6:00 PM and end at 8:00 PM. NEVER move it earlier (such as 5:30 PM) or alter its duration!
+           - If preceding goals or chores finish before a class starts (for example, activities finish at 5:15 PM and Cricket Class starts at 6:00 PM), schedule a "Free Time ✨" slot from 5:15 PM to 6:00 PM (45m) to bridge the gap. NEVER shift the class forward!
+        3. STRICT CONFIGURED DURATIONS:
+           - Each scheduled session of a Goal or Chore MUST have its exact configured duration (e.g., if a chore is "15m", schedule it as "15m"; if a goal is "30m", schedule it as "30m"; if "1h", schedule it as "1h").
+           - DO NOT arbitrarily change a 30m or 1h goal to 15m or shorten it.
+           - Schedule the exact number of occurrences based on the user's frequency (e.g., "Daily" = every day, "2x week" = 2 days, "Weekly" = 1 day).
+        4. ENTIRE WINDOW (ONLY FOR SCHOOL DAYS):
+           - On school days, you MUST schedule the ENTIRE time continuously from ${schoolStartTimeStr} to Bedtime (${bedtimeStr}) with NO GAPS.
+           - First activity on a school day MUST start exactly at ${schoolStartTimeStr}.
+           - Use "Free Time ✨" (Timed) to fill all gaps between activities and before/after classes up to Bedtime.
+        5. On Weekends (Saturday/Sunday): 
            - Schedule all classes and fixed free times at their exact specified times.
            - Schedule GOALS and CHORES at realistic, specific times starting at or after 10:00 AM.
-           - Keep the total time scheduled for the day (all slots combined) STRICTLY within ${weekendLimitHours} hours. Do not pad the day to Bedtime with Free Time beyond the ${weekendLimitHours} hours limit.
-           - If there are many weekly goals or chores, distribute them onto school days (weekdays) after school hours to ensure that you STRICTLY stay below ${weekendLimitHours} hours per day on weekends.
-        8. Every slot MUST have "isFlexible": false and have a realistic, exact "time" field (no blank times!).
-        9. Do NOT start any weekend day before 10:00 AM unless there is an explicit FIXED CLASS or FIXED FREE TIME that has been specified by the user to start earlier.
+           - Keep the total time scheduled for the day strictly within ${weekendLimitHours} hours. Do not add automatic "Free Time ✨" gap-filling slots on weekends.
+        6. Every slot MUST have "isFlexible": false and have a realistic, exact "time" field (no blank times!).
       `;
 
       const prompt = `
@@ -1069,20 +1061,14 @@ export default function App() {
         
         PLANNING RULES:
         ${planningRulesSection}
-        5. GOAL AND CHORE SPLITTING (IMPORTANT):
-           - Kids have short attention spans. If any GOAL or CHORE has a total duration of 1 hour or more per week (e.g., "1h", "1h 15m", "1h 30m", "2h", "3h") and a frequency like "Weekly" or "2x week", "3x week", "4x week" - you MUST NOT schedule it as a single huge block on a single day.
-           - Instead, split this weekly duration into smaller, kid-friendly session lengths (e.g., 15m, 20m, 30m, or 45m) and distribute them across multiple different days of the week.
-           - For example, "Piano Practice (1h 30m, Weekly / 3x week)" must be split and scheduled as three separate 30-minute sessions or two separate 45-minute sessions on different days of the week.
-           - Keep the activity name EXACTLY identical across all occurrences (e.g. "Piano Practice"). DO NOT append part numbers, suffixes (like "Part 1" or "(Split)") or change the spelling, so they map back to user terms perfectly.
-           - Ensure the sum of the split session durations over the course of the week equals the original target total duration (e.g., three 30m sessions sum to exactly 1h 30m).
-        6. Return ONLY valid JSON.
+        7. Return ONLY valid JSON.
         
         JSON Schema:
         {
           "days": [{
             "day": "Sunday", 
             "slots": [{
-              "time": "4:00 PM", // Omit if isFlexible is true. MUST follow 12h format: H:MM AM/PM.
+              "time": "4:00 PM", // MUST follow 12h format: H:MM AM/PM.
               "activity": "Name", 
               "duration": "1h", // MUST be format "Xh", "Xm", or "Xh Xm"
               "type": "Class | Chore | Goal | FreeTime", 
@@ -1183,155 +1169,287 @@ export default function App() {
       };
 
       if (result.days) {
+        const parseTime = (t: string) => {
+          if (!t) return 0;
+          const match = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
+          if (!match) return 0;
+          let h = parseInt(match[1]);
+          const m = parseInt(match[2]);
+          const p = match[3].toUpperCase();
+          if (p === 'PM' && h < 12) h += 12;
+          if (p === 'AM' && h === 12) h = 0;
+          return h * 60 + m;
+        };
+
+        const parseDurationMins = (dur: string) => {
+          if (!dur) return 0;
+          const hMatch = dur.match(/(\d+)\s*h/i);
+          const mMatch = dur.match(/(\d+)\s*m/i);
+          let mins = 0;
+          if (hMatch) mins += parseInt(hMatch[1]) * 60;
+          if (mMatch) mins += parseInt(mMatch[1]);
+          return mins > 0 ? mins : 30;
+        };
+
+        const formatMinsToDuration = (mins: number) => {
+          if (mins <= 0) return '0m';
+          const h = Math.floor(mins / 60);
+          const m = mins % 60;
+          if (h > 0 && m > 0) return `${h}h ${m}m`;
+          if (h > 0) return `${h}h`;
+          return `${m}m`;
+        };
+
+        const formatMinsTo12h = (mins: number) => {
+          let normalized = ((mins % 1440) + 1440) % 1440;
+          let h = Math.floor(normalized / 60);
+          const m = normalized % 60;
+          const period = h >= 12 ? 'PM' : 'AM';
+          if (h > 12) h -= 12;
+          if (h === 0) h = 12;
+          return `${h}:${m.toString().padStart(2, '0')} ${period}`;
+        };
+
         result.days = result.days.map((day: any) => {
-          const isSchoolDay = settings.schoolDays.includes(day.day as DayOfWeek) && (settings.schoolMode !== false);
+          const dayName = day.day as DayOfWeek;
+          const isSchoolDay = settings.schoolDays.includes(dayName) && (settings.schoolMode !== false);
           
-          let daySlots = day.slots || [];
-          
-          // Map to exact user terms & filter out hallucinations (nulls)
-          daySlots = daySlots.map((slot: any) => {
-            const mappedName = mapActivityName(slot.activity);
-            if (mappedName) {
-              return { ...slot, activity: mappedName, isFlexible: false };
-            }
-            return null;
-          }).filter(Boolean);
+          // 1. Gather all fixed classes and fixed free times for this specific day
+          const dayClasses = fixedClasses.filter(c => c.days.includes(dayName));
+          const dayFixedFreeTimes = freeTimes.filter(f => f.days.includes(dayName));
 
-          const parseTime = (t: string) => {
-            const match = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
-            if (!match) return 0;
-            let h = parseInt(match[1]);
-            const m = parseInt(match[2]);
-            const p = match[3].toUpperCase();
-            if (p === 'PM' && h < 12) h += 12;
-            if (p === 'AM' && h === 12) h = 0;
-            return h * 60 + m;
-          };
-
-          let requiredStart24 = '10:00';
-          if (isSchoolDay) {
-            requiredStart24 = settings.schoolDayStartTime;
-          } else {
-            const dayName = day.day as DayOfWeek;
-            const dayClasses = fixedClasses.filter(c => c.days.includes(dayName));
-            const dayFixedFreeTimes = freeTimes.filter(f => f.days.includes(dayName));
-            
-            let earliestKidMins = 600; // 10:00 AM
-            dayClasses.forEach(c => {
-              const m = parseTime(format12h(c.startTime));
-              if (m < earliestKidMins) earliestKidMins = m;
-            });
-            dayFixedFreeTimes.forEach(f => {
-              const m = parseTime(format12h(f.startTime));
-              if (m < earliestKidMins) earliestKidMins = m;
-            });
-            
-            if (earliestKidMins < 600) {
-              const h = Math.floor(earliestKidMins / 60);
-              const m = earliestKidMins % 60;
-              requiredStart24 = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-            }
+          interface FixedItem {
+            name: string;
+            startTime12h: string;
+            startMins: number;
+            endMins: number;
+            durationStr: string;
+            durationMins: number;
+            type: 'Class' | 'FreeTime';
+            reminder?: boolean;
           }
 
-          const timedSlots = daySlots.filter((s: any) => s.time);
+          const fixedItems: FixedItem[] = [];
 
-          if (timedSlots.length > 0) {
-            // Sort by time
-            timedSlots.sort((a: any, b: any) => parseTime(a.time) - parseTime(b.time));
+          dayClasses.forEach(c => {
+            const start12h = format12h(c.startTime);
+            const startMins = parseTime(start12h);
+            const durMins = parseDurationMins(c.duration);
+            fixedItems.push({
+              name: c.name,
+              startTime12h: start12h,
+              startMins,
+              endMins: startMins + durMins,
+              durationStr: c.duration,
+              durationMins: durMins,
+              type: 'Class',
+              reminder: c.reminder ?? false
+            });
+          });
 
-            const firstSlotTimeMins = parseTime(timedSlots[0].time);
-            const requiredStartMins = parseTime(format12h(requiredStart24));
-            
-            const currentTotalDur = daySlots.reduce((sum: number, slot: any) => {
-              const duration = slot.duration || '0m';
-              const hMatch = duration.match(/(\d+)h/);
-              const mMatch = duration.match(/(\d+)m/);
-              let mins = 0;
-              if (hMatch) mins += parseInt(hMatch[1]) * 60;
-              if (mMatch) mins += parseInt(mMatch[1]);
-              return sum + mins;
-            }, 0);
+          dayFixedFreeTimes.forEach(f => {
+            const start12h = format12h(f.startTime);
+            const startMins = parseTime(start12h);
+            const durMins = parseDurationMins(f.duration);
+            fixedItems.push({
+              name: f.name || 'Free Time ✨',
+              startTime12h: start12h,
+              startMins,
+              endMins: startMins + durMins,
+              durationStr: f.duration,
+              durationMins: durMins,
+              type: 'FreeTime',
+              reminder: false
+            });
+          });
 
-            const breakLimitHours = settings.breakAvailableHours ?? 6;
-            const weekendLimitHours = settings.weekendAvailableHours;
-            const isWeekdayInBreak = settings.schoolDays.includes(day.day as DayOfWeek) && (settings.schoolMode === false);
-            const dailyLimitMins = isSchoolDay
-              ? 999999
-              : (isWeekdayInBreak ? breakLimitHours * 60 : weekendLimitHours * 60);
+          // Sort fixed items strictly by start time
+          fixedItems.sort((a, b) => a.startMins - b.startMins);
 
-            if (firstSlotTimeMins > requiredStartMins) {
-              const gapMins = firstSlotTimeMins - requiredStartMins;
-              
-              if (isSchoolDay || (currentTotalDur + gapMins <= dailyLimitMins)) {
-                // If the gap is small (<= 30m) and the first slot is Free Time, just SNAP it to the start
-                if (gapMins <= 30 && timedSlots[0].activity.toLowerCase().includes("free time")) {
-                  const originalDuration = timedSlots[0].duration;
-                  let newDuration = originalDuration;
-                  
-                  // Add gap to duration
-                  const hMatch = originalDuration.match(/(\d+)h/);
-                  const mMatch = originalDuration.match(/(\d+)m/);
-                  let totalDurMins = 0;
-                  if (hMatch) totalDurMins += parseInt(hMatch[1]) * 60;
-                  if (mMatch) totalDurMins += parseInt(mMatch[1]);
-                  totalDurMins += gapMins;
-                  
-                  const h = Math.floor(totalDurMins/60);
-                  const m = totalDurMins % 60;
-                  newDuration = h > 0 ? `${h}h${m > 0 ? ` ${m}m` : ''}` : `${m}m`;
-                  
-                  timedSlots[0].time = format12h(requiredStart24);
-                  timedSlots[0].duration = newDuration;
+          // 2. Gather non-fixed slots from AI response
+          const rawAiSlots = day.slots || [];
+          const nonFixedSlots: PlanSlot[] = [];
+
+          rawAiSlots.forEach((slot: any) => {
+            const mappedName = mapActivityName(slot.activity);
+            if (!mappedName) return;
+
+            // If this matches a fixed class or fixed free time on this day, skip it from floating slots
+            const isFixedClass = dayClasses.some(c => c.name.toLowerCase() === mappedName.toLowerCase());
+            const isFixedFreeTime = dayFixedFreeTimes.some(f => f.name.toLowerCase() === mappedName.toLowerCase());
+            if (isFixedClass || isFixedFreeTime) {
+              return;
+            }
+
+            // Respect user configured duration if defined in goals or chores
+            const origGoal = practiceGoals.find(g => g.name.toLowerCase() === mappedName.toLowerCase());
+            const origChore = chores.find(c => c.name.toLowerCase() === mappedName.toLowerCase());
+            const durStr = origGoal ? origGoal.duration : (origChore ? origChore.duration : (slot.duration || '30m'));
+            const slotType = origGoal ? 'Goal' : (origChore ? 'Chore' : (mappedName.toLowerCase().includes('free time') ? 'FreeTime' : (slot.type || 'Other')));
+
+            nonFixedSlots.push({
+              time: slot.time,
+              activity: mappedName,
+              duration: durStr,
+              type: slotType as any,
+              isFlexible: false,
+              reminder: slot.reminder ?? false
+            });
+          });
+
+          let finalDaySlots: PlanSlot[] = [];
+
+          if (isSchoolDay) {
+            const schoolStartMins = parseTime(format12h(settings.schoolDayStartTime));
+            const bedtimeMins = parseTime(format12h(settings.bedtime));
+
+            let currentMins = schoolStartMins;
+            let nonFixedIndex = 0;
+
+            for (const item of fixedItems) {
+              // Fill available window before the fixed class / free time
+              while (currentMins < item.startMins) {
+                if (nonFixedIndex < nonFixedSlots.length) {
+                  const slot = nonFixedSlots[nonFixedIndex];
+                  const slotDur = parseDurationMins(slot.duration);
+
+                  if (currentMins + slotDur <= item.startMins) {
+                    finalDaySlots.push({
+                      ...slot,
+                      time: formatMinsTo12h(currentMins)
+                    });
+                    currentMins += slotDur;
+                    nonFixedIndex++;
+                  } else {
+                    // Non-fixed slot doesn't fit in remaining time before class, bridge with Free Time
+                    const gapMins = item.startMins - currentMins;
+                    if (gapMins > 0) {
+                      finalDaySlots.push({
+                        time: formatMinsTo12h(currentMins),
+                        activity: "Free Time ✨",
+                        duration: formatMinsToDuration(gapMins),
+                        type: "FreeTime",
+                        isFlexible: false,
+                        reminder: false
+                      });
+                    }
+                    currentMins = item.startMins;
+                    break;
+                  }
                 } else {
-                  // Prepend Free Time if gap at start
-                  const gapDuration = gapMins >= 60 ? `${Math.floor(gapMins/60)}h${gapMins%60 > 0 ? ` ${gapMins%60}m` : ''}` : `${gapMins}m`;
-                  
-                  daySlots.unshift({
-                    time: format12h(requiredStart24),
+                  // No more non-fixed slots, fill gap to fixed class with Free Time
+                  const gapMins = item.startMins - currentMins;
+                  if (gapMins > 0) {
+                    finalDaySlots.push({
+                      time: formatMinsTo12h(currentMins),
+                      activity: "Free Time ✨",
+                      duration: formatMinsToDuration(gapMins),
+                      type: "FreeTime",
+                      isFlexible: false,
+                      reminder: false
+                    });
+                  }
+                  currentMins = item.startMins;
+                  break;
+                }
+              }
+
+              // Anchor the fixed class / fixed free time at its EXACT user time and duration
+              finalDaySlots.push({
+                time: item.startTime12h,
+                activity: item.name,
+                duration: item.durationStr,
+                type: item.type,
+                isFlexible: false,
+                reminder: item.reminder
+              });
+              currentMins = Math.max(currentMins, item.endMins);
+            }
+
+            // After all fixed items, schedule remaining non-fixed slots
+            while (currentMins < bedtimeMins) {
+              if (nonFixedIndex < nonFixedSlots.length) {
+                const slot = nonFixedSlots[nonFixedIndex];
+                const slotDur = parseDurationMins(slot.duration);
+                if (currentMins + slotDur <= bedtimeMins) {
+                  finalDaySlots.push({
+                    ...slot,
+                    time: formatMinsTo12h(currentMins)
+                  });
+                  currentMins += slotDur;
+                  nonFixedIndex++;
+                } else {
+                  const remainingMins = bedtimeMins - currentMins;
+                  if (remainingMins > 0) {
+                    finalDaySlots.push({
+                      ...slot,
+                      time: formatMinsTo12h(currentMins),
+                      duration: formatMinsToDuration(remainingMins)
+                    });
+                  }
+                  currentMins = bedtimeMins;
+                  nonFixedIndex++;
+                  break;
+                }
+              } else {
+                // Fill remaining time to bedtime with Free Time
+                const gapMins = bedtimeMins - currentMins;
+                if (gapMins > 0) {
+                  finalDaySlots.push({
+                    time: formatMinsTo12h(currentMins),
                     activity: "Free Time ✨",
-                    duration: gapDuration,
+                    duration: formatMinsToDuration(gapMins),
                     type: "FreeTime",
                     isFlexible: false,
                     reminder: false
                   });
                 }
+                currentMins = bedtimeMins;
+                break;
               }
-            } else if (firstSlotTimeMins < requiredStartMins && isSchoolDay) {
-              // If AI tries to start BEFORE school availability, snap it to start
-              timedSlots[0].time = format12h(requiredStart24);
             }
           } else {
-            // No timed slots at all? Fill school day window or available hours limit
-            const startMins = parseTime(format12h(requiredStart24));
-            let gapMins = 0;
-            
-            if (isSchoolDay) {
-              const endMins = parseTime(format12h(settings.bedtime));
-              gapMins = Math.max(0, endMins - startMins);
-            } else {
-              const breakLimitHours = settings.breakAvailableHours ?? 6;
-              const weekendLimitHours = settings.weekendAvailableHours;
-              const isWeekdayInBreak = settings.schoolDays.includes(day.day as DayOfWeek) && (settings.schoolMode === false);
-              const limitHours = isWeekdayInBreak ? breakLimitHours : weekendLimitHours;
-              gapMins = limitHours * 60;
-            }
-            
-            const gapDuration = gapMins >= 60 ? `${Math.floor(gapMins/60)}h${gapMins%60 > 0 ? ` ${gapMins%60}m` : ''}` : `${gapMins}m`;
-            
-            daySlots.push({
-              time: format12h(requiredStart24),
-              activity: "Free Time ✨",
-              duration: gapDuration.replace(" 0m", ""),
-              type: "FreeTime",
-              isFlexible: false,
-              reminder: false
+            // Non-school days (Weekends / Breaks)
+            // Add all fixed items
+            fixedItems.forEach(item => {
+              finalDaySlots.push({
+                time: item.startTime12h,
+                activity: item.name,
+                duration: item.durationStr,
+                type: item.type,
+                isFlexible: false,
+                reminder: item.reminder
+              });
             });
+
+            // Add non-fixed goals and chores starting from 10:00 AM or AI time without colliding
+            let floatingStartMins = 600; // 10:00 AM
+            nonFixedSlots.forEach(slot => {
+              let slotTimeMins = slot.time ? parseTime(slot.time) : 0;
+              if (slotTimeMins < 600) {
+                slotTimeMins = floatingStartMins;
+              }
+              const slotDur = parseDurationMins(slot.duration);
+
+              let tries = 0;
+              while (tries < 20 && fixedItems.some(f => (slotTimeMins < f.endMins && slotTimeMins + slotDur > f.startMins))) {
+                const colliding = fixedItems.find(f => (slotTimeMins < f.endMins && slotTimeMins + slotDur > f.startMins))!;
+                slotTimeMins = colliding.endMins;
+                tries++;
+              }
+
+              finalDaySlots.push({
+                ...slot,
+                time: formatMinsTo12h(slotTimeMins)
+              });
+
+              floatingStartMins = slotTimeMins + slotDur;
+            });
+
+            finalDaySlots.sort((a, b) => parseTime(a.time || "12:00 AM") - parseTime(b.time || "12:00 AM"));
           }
 
-          // Ensure overall slot list is chronological
-          daySlots.sort((a: any, b: any) => parseTime(a.time || "12:00 AM") - parseTime(b.time || "12:00 AM"));
-
-          return { ...day, slots: daySlots };
+          return { ...day, slots: finalDaySlots };
         });
       }
 
