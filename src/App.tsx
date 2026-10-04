@@ -34,7 +34,12 @@ import {
   Play,
   Pause,
   X,
-  Palmtree
+  Palmtree,
+  Share2,
+  ExternalLink,
+  Copy,
+  Check,
+  Radio
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, Type, ThinkingLevel, Modality } from "@google/genai";
@@ -44,11 +49,13 @@ import {
   DayOfWeek, 
   WeeklyPlan,
   DailyPlan,
+  PlanSlot,
   PracticeGoal,
   Chore,
   FreeTime
 } from './types';
 import { NotificationService } from './services/notificationService';
+import { CalendarService } from './services/calendarService';
 import { LocalNotifications } from '@capacitor/local-notifications';
 
 const DAYS: DayOfWeek[] = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -306,6 +313,19 @@ export default function App() {
   const [apiKeyMissing, setApiKeyMissing] = useState(false);
   const [hasAcceptedAiConsent, setHasAcceptedAiConsent] = useState(false);
   const [showAiConsentModal, setShowAiConsentModal] = useState(false);
+  const [showCalendarSyncModal, setShowCalendarSyncModal] = useState(false);
+  const [classConflictModal, setClassConflictModal] = useState<{
+    conflict: {
+      classTime: string;
+      schoolStartTime: string;
+      conflictingDays: DayOfWeek[];
+      differenceMins: number;
+    };
+    saveWithUpdatedAvailability: () => void;
+    saveAnyway: () => void;
+  } | null>(null);
+  const [calendarSyncStatus, setCalendarSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
+  const [linkCopied, setLinkCopied] = useState(false);
   const [activeTimer, setActiveTimer] = useState<any>(() => {
     const saved = localStorage.getItem('planova_active_timer');
     if (saved) {
@@ -642,7 +662,39 @@ export default function App() {
     
     // Sync all notifications at once to prevent collisions
     NotificationService.syncAllNotifications(fixedClasses, plan, settings);
+
+    // Sync live calendar feed for parents
+    if (plan) {
+      CalendarService.syncPlan(plan, userName, settings);
+    }
   }, [userName, fixedClasses, practiceGoals, chores, settings, plan, planSettings, planActivitiesHash]);
+
+  const handleManualCalendarSync = async () => {
+    setCalendarSyncStatus('syncing');
+    const res = await CalendarService.syncPlan(plan, userName, settings);
+    if (res.success) {
+      setCalendarSyncStatus('synced');
+      setTimeout(() => setCalendarSyncStatus('idle'), 3000);
+    } else {
+      setCalendarSyncStatus('error');
+      setTimeout(() => setCalendarSyncStatus('idle'), 4000);
+    }
+  };
+
+  const handleCopyCalendarLink = async () => {
+    const urls = CalendarService.getCalendarUrls();
+    try {
+      await navigator.clipboard.writeText(urls.parentPageUrl);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2500);
+    } catch (e) {
+      alert(`Calendar Link: ${urls.parentPageUrl}`);
+    }
+  };
+
+  const handleShareCalendar = async () => {
+    await CalendarService.shareLink(userName);
+  };
 
   // Stop the story if the user navigates away or starts planning
   useEffect(() => {
@@ -687,23 +739,60 @@ export default function App() {
     alert('Test notification scheduled for 5 seconds from now. Please lock your screen or go to the home screen to see it.');
   };
 
-  const handleAddClass = (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
+  const format12h = (time24: string) => {
+    if (!time24) return '';
+    const [hours, minutes] = time24.split(':').map(Number);
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const h12 = hours % 12 || 12;
+    return `${h12}:${minutes.toString().padStart(2, '0')} ${period}`;
+  };
 
-    if (!newClassName || newClassName.trim() === '') {
-      setFormError("Please enter a class name! 🎹");
-      return;
+  const parseTimeToMinutes = (timeStr: string): number => {
+    if (!timeStr) return 0;
+    const match12 = timeStr.trim().match(/(\d+):(\d+)\s*(AM|PM)/i);
+    if (match12) {
+      let h = parseInt(match12[1], 10);
+      const m = parseInt(match12[2], 10);
+      const period = match12[3].toUpperCase();
+      if (period === 'PM' && h < 12) h += 12;
+      if (period === 'AM' && h === 12) h = 0;
+      return h * 60 + m;
     }
-    if (newClassDays.length === 0) {
-      setFormError("Please select at least one day for the class! 📅");
-      return;
+    const match24 = timeStr.trim().match(/(\d+):(\d+)/);
+    if (match24) {
+      return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
     }
-    if (!newClassTime) {
-      setFormError("Please select a start time for the class! ⏰");
-      return;
+    return 0;
+  };
+
+  const getWeekdayAvailabilityConflict = (
+    days: DayOfWeek[],
+    timeStr: string,
+    schoolStartTimeStr: string,
+    schoolDaysList: DayOfWeek[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+  ) => {
+    if (!timeStr || !schoolStartTimeStr || !days || days.length === 0) return null;
+    const classMins = parseTimeToMinutes(timeStr);
+    const schoolMins = parseTimeToMinutes(schoolStartTimeStr);
+
+    if (classMins >= schoolMins) return null;
+
+    const conflictingDays = days.filter(d => (schoolDaysList || []).includes(d));
+    if (conflictingDays.length === 0) return null;
+
+    return {
+      classTime: timeStr,
+      schoolStartTime: schoolStartTimeStr,
+      conflictingDays,
+      differenceMins: schoolMins - classMins
+    };
+  };
+
+  const saveClass = (autoUpdateAvailability = false) => {
+    if (autoUpdateAvailability) {
+      setSettings(prev => ({ ...prev, schoolDayStartTime: newClassTime }));
     }
-    
+
     if (editingClassId) {
       console.log('Planova Kidz: Updating existing class...', editingClassId);
       const otherClasses = fixedClasses.filter(c => c.id !== editingClassId);
@@ -774,6 +863,44 @@ export default function App() {
     setNewClassDays([]);
     setShowAddClass(false);
     setNewClassReminder(true);
+    setClassConflictModal(null);
+  };
+
+  const handleAddClass = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!newClassName || newClassName.trim() === '') {
+      setFormError("Please enter a class name! 🎹");
+      return;
+    }
+    if (newClassDays.length === 0) {
+      setFormError("Please select at least one day for the class! 📅");
+      return;
+    }
+    if (!newClassTime) {
+      setFormError("Please select a start time for the class! ⏰");
+      return;
+    }
+
+    // Check for weekday availability conflict
+    const conflict = getWeekdayAvailabilityConflict(
+      newClassDays,
+      newClassTime,
+      settings.schoolDayStartTime,
+      settings.schoolDays
+    );
+
+    if (conflict) {
+      setClassConflictModal({
+        conflict,
+        saveWithUpdatedAvailability: () => saveClass(true),
+        saveAnyway: () => saveClass(false)
+      });
+      return;
+    }
+
+    saveClass(false);
   };
 
   const handleAddPractice = (e: React.FormEvent) => {
@@ -934,13 +1061,6 @@ export default function App() {
     setShowAddFreeTime(true);
   };
 
-  const format12h = (time24: string) => {
-    const [hours, minutes] = time24.split(':').map(Number);
-    const period = hours >= 12 ? 'PM' : 'AM';
-    const h12 = hours % 12 || 12;
-    return `${h12}:${minutes.toString().padStart(2, '0')} ${period}`;
-  };
-
   const callAiWithRetry = async (fn: () => Promise<any>, maxRetries = 3) => {
     let attempt = 0;
     while (attempt <= maxRetries) {
@@ -1037,8 +1157,8 @@ export default function App() {
            - DO NOT arbitrarily change a 30m or 1h goal to 15m or shorten it.
            - Schedule the exact number of occurrences based on the user's frequency (e.g., "Daily" = every day, "2x week" = 2 days, "Weekly" = 1 day).
         4. ENTIRE WINDOW (ONLY FOR SCHOOL DAYS):
-           - On school days, you MUST schedule the ENTIRE time continuously from ${schoolStartTimeStr} to Bedtime (${bedtimeStr}) with NO GAPS.
-           - First activity on a school day MUST start exactly at ${schoolStartTimeStr}.
+           - On school days, you MUST schedule the ENTIRE time continuously from the earliest activity (or ${schoolStartTimeStr}) to Bedtime (${bedtimeStr}) with NO GAPS.
+           - If a fixed class is scheduled before ${schoolStartTimeStr}, start the schedule at that class's exact start time. Otherwise, first activity on a school day MUST start exactly at ${schoolStartTimeStr}.
            - Use "Free Time ✨" (Timed) to fill all gaps between activities and before/after classes up to Bedtime.
         5. On Weekends (Saturday/Sunday): 
            - Schedule all classes and fixed free times at their exact specified times.
@@ -1303,7 +1423,10 @@ export default function App() {
             const schoolStartMins = parseTime(format12h(settings.schoolDayStartTime));
             const bedtimeMins = parseTime(format12h(settings.bedtime));
 
-            let currentMins = schoolStartMins;
+            // If any fixed item is scheduled earlier than schoolStartMins (e.g. 4:00 PM class when availability is 4:30 PM),
+            // start the schedule from the earliest item so it is properly anchored and not orphaned
+            const earliestFixedMins = fixedItems.length > 0 ? Math.min(...fixedItems.map(i => i.startMins)) : schoolStartMins;
+            let currentMins = Math.min(schoolStartMins, earliestFixedMins);
             let nonFixedIndex = 0;
 
             for (const item of fixedItems) {
@@ -1707,6 +1830,191 @@ export default function App() {
     </AnimatePresence>
   );
 
+  const renderCalendarSyncModal = () => {
+    const urls = CalendarService.getCalendarUrls();
+
+    return (
+      <AnimatePresence>
+        {showCalendarSyncModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white rounded-[32px] overflow-hidden max-w-sm w-full shadow-2xl border border-slate-100 my-auto text-center"
+            >
+              <div className="bg-gradient-to-br from-indigo-600 to-violet-600 p-6 text-center text-white relative">
+                <button
+                  onClick={() => setShowCalendarSyncModal(false)}
+                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-all cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto backdrop-blur-sm shadow-inner mb-2 text-2xl">
+                  📅
+                </div>
+                <h3 className="text-lg font-black tracking-tight">Parent Live Calendar Sync</h3>
+                <p className="text-indigo-100 text-xs font-medium mt-1">Start alerts on Mom & Dad's Lock Screen</p>
+              </div>
+
+              <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto text-left">
+                <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3.5 space-y-1.5 text-left">
+                  <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                    <BellRing className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>No App Required for Parents!</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                    Parents subscribe once in Apple Calendar or Google Calendar. Whenever your 7-day plan updates, their phone automatically receives the schedule and rings right when each class, chore, or goal starts.
+                  </p>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  {/* Apple Calendar Webcal Button */}
+                  <a
+                    href={urls.webcalUrl}
+                    className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black text-xs uppercase tracking-wider py-3.5 rounded-2xl shadow-lg shadow-indigo-100 transition-all text-center"
+                  >
+                    <span></span> Subscribe in Apple Calendar
+                  </a>
+
+                  {/* Google Calendar Button */}
+                  <a
+                    href={urls.googleCalUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-black text-xs uppercase tracking-wider py-3.5 rounded-2xl shadow-sm transition-all text-center"
+                  >
+                    <span>🗓️</span> Add to Google Calendar
+                  </a>
+
+                  {/* Share Link Sheet Button */}
+                  <button
+                    onClick={handleShareCalendar}
+                    className="w-full flex items-center justify-center gap-2 bg-violet-50 hover:bg-violet-100 active:scale-95 text-violet-700 font-bold text-xs uppercase tracking-wider py-3 rounded-2xl border border-violet-100 transition-all cursor-pointer"
+                  >
+                    <Share2 className="w-4 h-4" /> Share Subscription Link
+                  </button>
+
+                  {/* Copy Link Button */}
+                  <button
+                    onClick={handleCopyCalendarLink}
+                    className="w-full flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 active:scale-95 text-slate-700 font-bold text-xs uppercase tracking-wider py-3 rounded-2xl border border-slate-200 transition-all cursor-pointer"
+                  >
+                    {linkCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    {linkCopied ? 'Link Copied to Clipboard!' : 'Copy Parent Web Link'}
+                  </button>
+
+                  {/* Download .ics */}
+                  <a
+                    href={urls.httpFeedUrl}
+                    download={`${(userName || "planova").toLowerCase().replace(/[^a-z0-9]/g, "-")}-schedule.ics`}
+                    className="w-full flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-600 font-bold text-[11px] uppercase tracking-wider py-2 transition-colors text-center"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Download .ics File
+                  </a>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400 font-medium">7-Day Cloud Feed</span>
+                  <button
+                    onClick={handleManualCalendarSync}
+                    disabled={calendarSyncStatus === 'syncing'}
+                    className="text-[11px] font-black text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    {calendarSyncStatus === 'syncing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    {calendarSyncStatus === 'synced' ? 'Synced! ✨' : calendarSyncStatus === 'error' ? 'Retry Sync' : 'Sync Now'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  };
+
+  const renderClassConflictModal = () => {
+    if (!classConflictModal) return null;
+    const { conflict, saveWithUpdatedAvailability, saveAnyway } = classConflictModal;
+
+    return (
+      <AnimatePresence>
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
+        >
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            className="bg-white rounded-[32px] overflow-hidden max-w-sm w-full shadow-2xl border border-slate-100 my-auto text-left"
+          >
+            <div className="bg-gradient-to-br from-amber-500 to-orange-500 p-6 text-white relative text-center">
+              <button
+                onClick={() => setClassConflictModal(null)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center text-white transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto backdrop-blur-sm shadow-inner mb-2 text-2xl">
+                ⚠️
+              </div>
+              <h3 className="text-lg font-black tracking-tight">Availability Warning</h3>
+              <p className="text-amber-100 text-xs font-medium mt-1">Class scheduled before weekday availability</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-4 space-y-2 text-amber-950">
+                <p className="text-xs font-bold leading-relaxed">
+                  You are scheduling this class for <span className="underline decoration-amber-400 font-black">{format12h(conflict.classTime)}</span> on <span className="font-black">{conflict.conflictingDays.join(', ')}</span>.
+                </p>
+                <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                  However, your weekday availability in Settings is set to after <strong>{format12h(conflict.schoolStartTime)}</strong> ({conflict.differenceMins} minutes later).
+                </p>
+                <p className="text-[11px] text-amber-900/90 font-semibold pt-1">
+                  Will your child be home from school in time, or should we adjust your weekday availability?
+                </p>
+              </div>
+
+              <div className="space-y-2.5 pt-1">
+                {/* Option 1: Update availability to match class */}
+                <button
+                  onClick={saveWithUpdatedAvailability}
+                  className="w-full flex items-center justify-center gap-2 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-black text-xs uppercase tracking-wider py-3.5 rounded-2xl shadow-lg shadow-amber-200 transition-all cursor-pointer"
+                >
+                  <Check className="w-4 h-4" /> Update Availability to {format12h(conflict.classTime)} & Save
+                </button>
+
+                {/* Option 2: Save anyway as exception */}
+                <button
+                  onClick={saveAnyway}
+                  className="w-full flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 font-bold text-xs uppercase tracking-wider py-3 rounded-2xl transition-all cursor-pointer"
+                >
+                  Keep {format12h(conflict.schoolStartTime)} & Save Anyway
+                </button>
+
+                {/* Option 3: Cancel and return to form */}
+                <button
+                  onClick={() => setClassConflictModal(null)}
+                  className="w-full text-center text-xs text-slate-400 hover:text-slate-600 font-semibold py-1 cursor-pointer transition-colors"
+                >
+                  Go Back to Change Class Time
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
+    );
+  };
+
   const renderPrivacy = () => {
     return (
       <motion.div 
@@ -2017,7 +2325,7 @@ export default function App() {
                   if (p === 'AM' && h === 12) h = 0;
                   const slotTimeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
                   
-                  return slotTimeStr >= startTime24;
+                  return slot.type === 'Class' || slotTimeStr >= startTime24;
                 });
 
                 const flexibleSlots = daySlots.filter(s => s.isFlexible);
@@ -2040,7 +2348,15 @@ export default function App() {
                               </div>
                               <div className={`h-8 w-[2px] ${theme.lightBg} rounded-full`} />
                               <div className="flex-1">
-                                <p className="font-bold text-slate-700">{slot.activity}</p>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-bold text-slate-700">{slot.activity}</p>
+                                  {isSchoolDay && slot.time && parseTimeToMinutes(slot.time) < parseTimeToMinutes(settings.schoolDayStartTime) && (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200/90 px-1.5 py-0.5 rounded-md">
+                                      <AlertTriangle className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                      Early Start (before {format12h(settings.schoolDayStartTime)})
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               {slot.reminder && <BellRing className="w-4 h-4 text-amber-500" />}
                             </div>
@@ -2198,6 +2514,41 @@ export default function App() {
                   </select>
                   <ChevronDown className="absolute right-0 top-1/2 -translate-y-1/2 w-5 h-5 text-rose-300 pointer-events-none" />
                 </div>
+
+                {(() => {
+                  const earlyClasses = fixedClasses.filter(c => 
+                    getWeekdayAvailabilityConflict(c.days, c.startTime, settings.schoolDayStartTime, settings.schoolDays)
+                  );
+                  if (earlyClasses.length === 0) return null;
+                  return (
+                    <div className="bg-amber-50 border-2 border-amber-200/90 rounded-2xl p-3.5 text-xs text-amber-950 space-y-2 mt-3 text-left">
+                      <div className="flex items-center gap-2 font-black text-amber-900">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Weekday Class Conflict</span>
+                      </div>
+                      <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                        You are set as available after <strong>{format12h(settings.schoolDayStartTime)}</strong>, but the following classes are scheduled earlier:
+                      </p>
+                      <div className="space-y-1.5">
+                        {earlyClasses.map(c => (
+                          <div key={c.id} className="text-[11px] font-bold text-amber-900 flex items-center justify-between bg-white/80 px-2.5 py-1.5 rounded-xl border border-amber-100">
+                            <span>• {c.name}: {format12h(c.startTime)} ({c.days.filter(d => settings.schoolDays.includes(d)).join(', ')})</span>
+                            <button
+                              type="button"
+                              onClick={() => setSettings(prev => ({ ...prev, schoolDayStartTime: c.startTime }))}
+                              className="text-[10px] text-amber-700 underline font-black hover:text-amber-900 ml-2 cursor-pointer shrink-0"
+                            >
+                              Set to {format12h(c.startTime)}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-amber-700/90 font-medium">
+                        Make sure your child is home from school in time for these activities!
+                      </p>
+                    </div>
+                  );
+                })()}
               </>
             )}
           </div>
@@ -2410,6 +2761,57 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {(() => {
+                const liveConflict = getWeekdayAvailabilityConflict(
+                  newClassDays,
+                  newClassTime,
+                  settings.schoolDayStartTime,
+                  settings.schoolDays
+                );
+                if (!liveConflict) return null;
+                return (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3.5 space-y-2 text-amber-950 shadow-xs"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-1 bg-amber-500 text-white rounded-lg shrink-0 mt-0.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="text-xs space-y-0.5">
+                        <p className="font-black text-amber-900">
+                          Weekday Availability Warning
+                        </p>
+                        <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                          You are setting this class for <strong>{format12h(newClassTime)}</strong> on <strong>{liveConflict.conflictingDays.join(', ')}</strong>, but your weekday availability in Settings starts after <strong>{format12h(settings.schoolDayStartTime)}</strong> ({liveConflict.differenceMins} mins later).
+                        </p>
+                        <p className="text-[10px] text-amber-700 font-medium">
+                          Will you be home from school in time?
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setSettings(prev => ({ ...prev, schoolDayStartTime: newClassTime }))}
+                        className="text-[10px] font-black bg-amber-600 hover:bg-amber-700 active:scale-95 text-white px-2.5 py-1.5 rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Check className="w-3 h-3" /> Set availability to {format12h(newClassTime)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewClassTime(settings.schoolDayStartTime)}
+                        className="text-[10px] font-bold bg-white text-amber-900 border border-amber-200 hover:bg-amber-100/60 active:scale-95 px-2.5 py-1.5 rounded-xl transition-all cursor-pointer"
+                      >
+                        Move class to {format12h(settings.schoolDayStartTime)}
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })()}
+
               <div className="flex items-center justify-between pt-2">
                 <label className="text-[10px] font-bold text-indigo-400 uppercase flex items-center gap-1">
                   <Bell className="w-3 h-3" /> Set Reminder
@@ -2460,25 +2862,45 @@ export default function App() {
                 </div>
               </div>
               <div className="space-y-2">
-                {fixedClasses.filter(c => c.name === name).map(c => (
-                  <div key={c.id} className="flex items-center justify-between text-xs">
-                    <div className="flex-1">
-                      <p className="text-indigo-500/70 font-medium flex items-center gap-1 flex-wrap">
-                        <span className="font-bold text-indigo-600">{c.days.join(', ')}</span>
-                        <span>at {format12h(c.startTime)} ({c.duration})</span>
-                        {c.reminder && <BellRing className="w-3 h-3 text-amber-500" />}
-                      </p>
+                {fixedClasses.filter(c => c.name === name).map(c => {
+                  const classConflict = getWeekdayAvailabilityConflict(c.days, c.startTime, settings.schoolDayStartTime, settings.schoolDays);
+                  return (
+                    <div key={c.id} className="space-y-1.5 py-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex-1">
+                          <p className="text-indigo-500/70 font-medium flex items-center gap-1 flex-wrap">
+                            <span className="font-bold text-indigo-600">{c.days.join(', ')}</span>
+                            <span>at {format12h(c.startTime)} ({c.duration})</span>
+                            {c.reminder && <BellRing className="w-3 h-3 text-amber-500" />}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => startEditClass(c)} className="text-slate-300 hover:text-indigo-500 transition-colors">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => setFixedClasses(fixedClasses.filter(i => i.id !== c.id))} className="text-slate-300 hover:text-red-500 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      {classConflict && (
+                        <div className="flex items-center justify-between gap-1 text-[11px] font-semibold text-amber-900 bg-amber-50 border border-amber-200/90 px-2.5 py-1.5 rounded-xl">
+                          <span className="flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            <span>Starts at {format12h(c.startTime)} (before {format12h(settings.schoolDayStartTime)} availability)</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSettings(prev => ({ ...prev, schoolDayStartTime: c.startTime }))}
+                            className="text-[10px] font-black text-amber-700 underline hover:text-amber-900 cursor-pointer shrink-0 ml-1"
+                          >
+                            Set to {format12h(c.startTime)}
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => startEditClass(c)} className="text-slate-300 hover:text-indigo-500 transition-colors">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => setFixedClasses(fixedClasses.filter(i => i.id !== c.id))} className="text-slate-300 hover:text-red-500 transition-colors">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -2983,9 +3405,20 @@ export default function App() {
 
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 pb-12">
-      <header className="space-y-1">
-        <h2 className="text-2xl font-black text-slate-900">Your Weekly Plan</h2>
-        <p className="text-slate-500 text-sm">AI-crafted for a balanced week.</p>
+      <header className="flex items-center justify-between gap-3">
+        <div className="space-y-1 text-left">
+          <h2 className="text-2xl font-black text-slate-900">Your Weekly Plan</h2>
+          <p className="text-slate-500 text-sm">AI-crafted for a balanced week.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowCalendarSyncModal(true)}
+          className="flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white px-3.5 py-2.5 rounded-2xl font-black text-[10px] uppercase tracking-wider shadow-md shadow-indigo-100 active:scale-95 transition-all shrink-0 cursor-pointer"
+          title="Share live start alerts with mom & dad"
+        >
+          <Calendar className="w-3.5 h-3.5" />
+          <span>Parent Sync</span>
+        </button>
       </header>
 
       {checkIfSettingsDirty() && (
@@ -3081,7 +3514,7 @@ export default function App() {
                   const slotTimeStr = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
                   
                   const startTime24 = isSchoolDay ? settings.schoolDayStartTime : getWeekendStartTime24(currentDayPlan.slots);
-                  return slotTimeStr >= startTime24;
+                  return slot.type === 'Class' || slotTimeStr >= startTime24;
                 });
 
                 const flexibleSlots = currentDayPlan.slots.filter(s => s.isFlexible);
@@ -3112,11 +3545,17 @@ export default function App() {
                               </span>
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-0.5">
+                              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                                 <p className="font-bold text-sm text-slate-800 truncate">{slot.activity}</p>
                                 {slot.type === 'Class' && (
                                   <span className="text-[8px] font-black px-1.5 py-0.5 rounded uppercase border border-indigo-200 text-indigo-500 bg-indigo-50">
                                     Class
+                                  </span>
+                                )}
+                                {isSchoolDay && slot.time && parseTimeToMinutes(slot.time) < parseTimeToMinutes(settings.schoolDayStartTime) && (
+                                  <span className="inline-flex items-center gap-1 text-[8px] font-black text-amber-700 bg-amber-50 border border-amber-200/90 px-1.5 py-0.5 rounded uppercase">
+                                    <AlertTriangle className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                                    Early Start (before {format12h(settings.schoolDayStartTime)})
                                   </span>
                                 )}
                               </div>
@@ -3339,6 +3778,52 @@ export default function App() {
             </p>
           </div>
 
+          {/* Parent Calendar Sync & Start Alerts Card */}
+          <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-4 text-left">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div className="text-left">
+                  <h4 className="font-black text-slate-900 text-sm">Parent Start Alerts</h4>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-violet-500">
+                    Live Calendar Sync 🔔
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCalendarSyncModal(true)}
+                className="bg-violet-600 hover:bg-violet-700 active:scale-95 text-white px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shadow-violet-100 cursor-pointer"
+              >
+                Manage
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
+              Parents get Lock Screen alerts when each activity starts without installing an app. Subscribed via Apple or Google Calendar.
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleShareCalendar}
+                className="flex-1 bg-violet-50 hover:bg-violet-100 text-violet-700 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                Share Link
+              </button>
+              <button
+                type="button"
+                onClick={handleManualCalendarSync}
+                disabled={calendarSyncStatus === 'syncing'}
+                className="flex-1 bg-slate-50 hover:bg-slate-100 text-slate-700 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+              >
+                {calendarSyncStatus === 'syncing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-amber-500" />}
+                {calendarSyncStatus === 'synced' ? 'Synced! ✨' : 'Sync 7-Day Plan'}
+              </button>
+            </div>
+          </div>
+
           <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm space-y-4">
             <div className="flex items-center justify-center gap-2 text-slate-600">
               <Bell className="w-4 h-4" />
@@ -3493,6 +3978,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 pt-[env(safe-area-inset-top)]">
       {renderAiConsentModal()}
+      {renderCalendarSyncModal()}
+      {renderClassConflictModal()}
       <div className="h-6 bg-white w-full sticky top-0 z-50 md:hidden" />
 
       <main className="pb-24 pt-4 px-6 max-w-md mx-auto">
