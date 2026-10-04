@@ -314,6 +314,8 @@ export default function App() {
   const [hasAcceptedAiConsent, setHasAcceptedAiConsent] = useState(false);
   const [showAiConsentModal, setShowAiConsentModal] = useState(false);
   const [showCalendarSyncModal, setShowCalendarSyncModal] = useState(false);
+  const [showAdvancedServerConfig, setShowAdvancedServerConfig] = useState(false);
+  const [customServerInput, setCustomServerInput] = useState(() => CalendarService.getCustomHost());
   const [classConflictModal, setClassConflictModal] = useState<{
     conflict: {
       classTime: string;
@@ -1832,6 +1834,7 @@ export default function App() {
 
   const renderCalendarSyncModal = () => {
     const urls = CalendarService.getCalendarUrls();
+    const isPublicServer = CalendarService.isPublicServerConfigured();
 
     return (
       <AnimatePresence>
@@ -1846,7 +1849,7 @@ export default function App() {
               initial={{ scale: 0.9, opacity: 0, y: 20 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
-              className="bg-white rounded-[32px] overflow-hidden max-w-sm w-full shadow-2xl border border-slate-100 my-auto text-center"
+              className="bg-white rounded-[32px] overflow-hidden max-w-sm w-full shadow-2xl border border-slate-100 my-auto text-left"
             >
               <div className="bg-gradient-to-br from-indigo-600 to-violet-600 p-6 text-center text-white relative">
                 <button
@@ -1858,77 +1861,126 @@ export default function App() {
                 <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mx-auto backdrop-blur-sm shadow-inner mb-2 text-2xl">
                   📅
                 </div>
-                <h3 className="text-lg font-black tracking-tight">Parent Live Calendar Sync</h3>
-                <p className="text-indigo-100 text-xs font-medium mt-1">Start alerts on Mom & Dad's Lock Screen</p>
+                <h3 className="text-lg font-black tracking-tight">Parent Calendar Sync</h3>
+                <p className="text-indigo-100 text-xs font-medium mt-1">Get activity alerts on Mom & Dad's phone</p>
               </div>
 
               <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto text-left">
-                <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-3.5 space-y-1.5 text-left">
-                  <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
-                    <BellRing className="w-4 h-4 text-amber-600 shrink-0" />
-                    <span>No App Required for Parents!</span>
+                {/* Apple Calendar Section */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-slate-800 uppercase tracking-wider">
+                    <span></span> Apple Calendar (iPhone & Mac)
                   </div>
-                  <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
-                    Parents subscribe once in Apple Calendar or Google Calendar. Whenever your 7-day plan updates, their phone automatically receives the schedule and rings right when each class, chore, or goal starts.
+                  <button
+                    onClick={() => CalendarService.openOrShareICS(plan, userName)}
+                    className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-black text-xs uppercase tracking-wider py-3.5 rounded-2xl shadow-md transition-all text-center cursor-pointer"
+                  >
+                    <span></span> Add All Events to Apple Calendar
+                  </button>
+                  <p className="text-[11px] text-slate-400 font-medium px-1">
+                    Opens native Apple Calendar on iOS with one-tap "Add All Events".
                   </p>
                 </div>
 
-                <div className="space-y-2 pt-1">
-                  {/* Apple Calendar Webcal Button */}
-                  <a
-                    href={urls.webcalUrl}
-                    className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black text-xs uppercase tracking-wider py-3.5 rounded-2xl shadow-lg shadow-indigo-100 transition-all text-center"
-                  >
-                    <span></span> Subscribe in Apple Calendar
-                  </a>
-
-                  {/* Google Calendar Button */}
-                  <a
-                    href={urls.googleCalUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-black text-xs uppercase tracking-wider py-3.5 rounded-2xl shadow-sm transition-all text-center"
-                  >
-                    <span>🗓️</span> Add to Google Calendar
-                  </a>
-
-                  {/* Share Link Sheet Button */}
+                {/* Google Calendar Section */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-slate-800 uppercase tracking-wider">
+                    <span>🗓️</span> Google Calendar
+                  </div>
                   <button
-                    onClick={handleShareCalendar}
-                    className="w-full flex items-center justify-center gap-2 bg-violet-50 hover:bg-violet-100 active:scale-95 text-violet-700 font-bold text-xs uppercase tracking-wider py-3 rounded-2xl border border-violet-100 transition-all cursor-pointer"
+                    onClick={() => CalendarService.openGoogleCalendarImport(plan, userName)}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-95 text-white font-black text-xs uppercase tracking-wider py-3.5 rounded-2xl shadow-md shadow-blue-100 transition-all text-center cursor-pointer"
                   >
-                    <Share2 className="w-4 h-4" /> Share Subscription Link
+                    <span>📥</span> Import into Google Calendar
                   </button>
-
-                  {/* Copy Link Button */}
-                  <button
-                    onClick={handleCopyCalendarLink}
-                    className="w-full flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 active:scale-95 text-slate-700 font-bold text-xs uppercase tracking-wider py-3 rounded-2xl border border-slate-200 transition-all cursor-pointer"
-                  >
-                    {linkCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-                    {linkCopied ? 'Link Copied to Clipboard!' : 'Copy Parent Web Link'}
-                  </button>
-
-                  {/* Download .ics */}
-                  <a
-                    href={urls.httpFeedUrl}
-                    download={`${(userName || "planova").toLowerCase().replace(/[^a-z0-9]/g, "-")}-schedule.ics`}
-                    className="w-full flex items-center justify-center gap-1.5 text-slate-400 hover:text-slate-600 font-bold text-[11px] uppercase tracking-wider py-2 transition-colors text-center"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" /> Download .ics File
-                  </a>
+                  <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-2.5 text-[11px] text-blue-900 space-y-1 font-medium">
+                    <p className="font-bold">⚡ Quick 2-Step Import:</p>
+                    <p>1. Clicking above downloads your schedule file.</p>
+                    <p>2. Select the file on the Google Calendar page and click <b>Import</b>.</p>
+                  </div>
                 </div>
 
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400 font-medium">7-Day Cloud Feed</span>
+                {/* Share / Copy Options */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
                   <button
-                    onClick={handleManualCalendarSync}
-                    disabled={calendarSyncStatus === 'syncing'}
-                    className="text-[11px] font-black text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    onClick={() => CalendarService.openOrShareICS(plan, userName)}
+                    className="w-full flex items-center justify-center gap-2 bg-violet-50 hover:bg-violet-100 active:scale-95 text-violet-700 font-bold text-xs uppercase tracking-wider py-2.5 rounded-2xl border border-violet-100 transition-all cursor-pointer"
                   >
-                    {calendarSyncStatus === 'syncing' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                    {calendarSyncStatus === 'synced' ? 'Synced! ✨' : calendarSyncStatus === 'error' ? 'Retry Sync' : 'Sync Now'}
+                    <Share2 className="w-4 h-4" /> Share Schedule to Mom or Dad
                   </button>
+
+                  <button
+                    onClick={() => CalendarService.downloadOrOpenClientICS(plan, userName)}
+                    className="w-full flex items-center justify-center gap-1.5 text-slate-500 hover:text-slate-700 font-bold text-[11px] uppercase tracking-wider py-1.5 transition-colors text-center cursor-pointer"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Download .ics File Directly
+                  </button>
+                </div>
+
+                {/* Advanced: Live Auto-Sync Cloud Feed */}
+                <div className="pt-2 border-t border-slate-100">
+                  <button
+                    onClick={() => setShowAdvancedServerConfig(!showAdvancedServerConfig)}
+                    className="w-full flex items-center justify-between text-[11px] font-bold text-slate-400 hover:text-slate-600 py-1 cursor-pointer"
+                  >
+                    <span>📡 Live Auto-Updating Feed (Server Setup)</span>
+                    <span className="text-xs">{showAdvancedServerConfig ? '▲' : '▼'}</span>
+                  </button>
+
+                  {showAdvancedServerConfig && (
+                    <div className="mt-2 p-3 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2.5 text-xs">
+                      <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+                        Background calendar subscriptions require a publicly accessible cloud server so Apple and Google can crawl your schedule URL.
+                      </p>
+
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase">Public Backend URL</label>
+                        <div className="flex gap-1.5">
+                          <input 
+                            type="text" 
+                            placeholder="https://my-planova.onrender.com"
+                            value={customServerInput}
+                            onChange={(e) => setCustomServerInput(e.target.value)}
+                            className="flex-1 bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-mono text-slate-700 outline-none focus:border-indigo-500"
+                          />
+                          <button
+                            onClick={() => {
+                              CalendarService.setCustomHost(customServerInput);
+                              alert(customServerInput ? 'Custom server URL saved!' : 'Reset to default URL');
+                            }}
+                            className="bg-indigo-600 text-white font-bold px-3 py-1.5 rounded-xl text-xs active:scale-95 cursor-pointer"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+
+                      {isPublicServer ? (
+                        <div className="space-y-1.5 pt-1">
+                          <a
+                            href={urls.webcalUrl}
+                            className="block text-center bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold py-2 rounded-xl text-xs hover:bg-indigo-100"
+                          >
+                            Subscribe via Webcal URL
+                          </a>
+                          <div className="flex items-center justify-between text-[10px] text-slate-400">
+                            <span>Cloud Sync Status</span>
+                            <button
+                              onClick={handleManualCalendarSync}
+                              disabled={calendarSyncStatus === 'syncing'}
+                              className="text-indigo-600 font-bold hover:underline"
+                            >
+                              {calendarSyncStatus === 'syncing' ? 'Syncing...' : 'Push to Cloud'}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-amber-700 bg-amber-50 p-2 rounded-xl border border-amber-200">
+                          ⚠️ No external server configured. Use the 1-click <b>Apple Calendar</b> or <b>Google Calendar</b> buttons above for direct offline import.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>
